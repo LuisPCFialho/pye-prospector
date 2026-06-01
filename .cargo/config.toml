@@ -1,0 +1,5 @@
+# Rust MSVC toolchain auto-detects VS 2019 BuildTools via vswhere.
+# VS 2019 BuildTools with C++ workload is installed at:
+#   C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools
+# Windows SDK 10.0.22621.0 available.
+# No manual linker override needed — rustc finds MSVC via the registry.
