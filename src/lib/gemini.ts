@@ -28,18 +28,46 @@ export async function askAI(req: AIRequest): Promise<string> {
 
 async function callGemini(req: AIRequest): Promise<string> {
   const prompt = buildPrompt(req);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 600 },
-    }),
-  });
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? mockResponse(req);
+
+  // Try models in order — fall back to next if quota / not-found
+  const models = [
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+  ];
+
+  let lastError = "";
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+        }),
+      });
+
+      if (res.status === 429 || res.status === 404) {
+        lastError = `${model} → ${res.status}`;
+        continue; // try next model
+      }
+      if (!res.ok) {
+        lastError = `${model} → HTTP ${res.status}`;
+        continue;
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+      lastError = `${model} → empty response`;
+    } catch (e) {
+      lastError = `${model} → ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  throw new Error(`Todos os modelos Gemini falharam. Último: ${lastError}`);
 }
 
 function buildPrompt(req: AIRequest): string {
