@@ -1,5 +1,4 @@
 import * as turf from "@turf/turf";
-import { config } from "../config";
 import type { BuildingFeature } from "../types/building";
 
 export interface BBox {
@@ -13,15 +12,42 @@ interface OverpassElement {
   geometry?: { lat: number; lon: number }[];
 }
 
-const CI_FILTER = `["building"~"^(industrial|warehouse|commercial|retail|factory|manufacture|supermarket|hangar|office|public|hospital|school|university|shop|service|storage)$"]`;
+// Public Overpass mirrors — tried in order until one responds
+const MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter",
+];
+
+const CI_FILTER = `["building"~"^(industrial|warehouse|commercial|retail|factory|manufacture|supermarket|hangar|office|public|hospital|school|university|shop|service|storage|detached|semidetached_house)$"]`;
 
 function buildQuery(bbox: BBox): string {
   const { minLat, minLon, maxLat, maxLon } = bbox;
-  return `[out:json][timeout:60];
+  // timeout:25 keeps each mirror attempt short so we can fallback quickly
+  return `[out:json][timeout:25][maxsize:32000000];
 (
   way${CI_FILTER}(${minLat},${minLon},${maxLat},${maxLon});
 );
 out geom tags;`;
+}
+
+async function tryMirror(url: string, query: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 28_000);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
 }
 
 function elementToBuilding(el: OverpassElement): BuildingFeature | null {
@@ -57,17 +83,42 @@ function elementToBuilding(el: OverpassElement): BuildingFeature | null {
 }
 
 export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[]> {
-  const res = await fetch(config.overpassUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(buildQuery(bbox))}`,
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}: ${await res.text()}`);
+  const query = buildQuery(bbox);
+  const errors: string[] = [];
 
-  const data = await res.json() as { elements: OverpassElement[] };
-  return data.elements
-    .map(elementToBuilding)
-    .filter((b): b is BuildingFeature => b !== null);
+  for (const mirror of MIRRORS) {
+    try {
+      const res = await tryMirror(mirror, query);
+
+      if (!res.ok) {
+        errors.push(`${mirror}: HTTP ${res.status}`);
+        continue;
+      }
+
+      const text = await res.text();
+
+      // Overpass sometimes returns 200 with an XML error body
+      if (text.trimStart().startsWith("<")) {
+        const msg = text.match(/<p[^>]*>.*?Error.*?<\/p>/s)?.[0]
+          ?.replace(/<[^>]+>/g, "").trim()
+          ?? "Overpass server error";
+        errors.push(`${mirror}: ${msg.slice(0, 120)}`);
+        continue;
+      }
+
+      const data = JSON.parse(text) as { elements: OverpassElement[] };
+      return data.elements
+        .map(elementToBuilding)
+        .filter((b): b is BuildingFeature => b !== null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${mirror}: ${msg.slice(0, 80)}`);
+    }
+  }
+
+  throw new Error(
+    `Todos os servidores Overpass falharam:\n${errors.join("\n")}`
+  );
 }
 
 export function buildingsToGeoJSON(
