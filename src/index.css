@@ -16,3 +16,12 @@ body,
 .maplibregl-ctrl-attrib-inner a {
   color: #94a3b8;
 }
+
+/* Map container fills its positioned parent completely */
+.map-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
