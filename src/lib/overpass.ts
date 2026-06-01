@@ -1,65 +1,85 @@
+import * as turf from "@turf/turf";
 import { config } from "../config";
+import type { BuildingFeature } from "../types/building";
 
 export interface BBox {
-  minLon: number;
-  minLat: number;
-  maxLon: number;
-  maxLat: number;
+  minLon: number; minLat: number; maxLon: number; maxLat: number;
 }
 
-export interface OverpassElement {
-  type: "way" | "relation" | "node";
+interface OverpassElement {
+  type: "way" | "relation";
   id: number;
   tags?: Record<string, string>;
   geometry?: { lat: number; lon: number }[];
-  members?: { type: string; ref: number; role: string; geometry?: { lat: number; lon: number }[] }[];
 }
 
-const COMMERCIAL_INDUSTRIAL_FILTER = `
-  ["building"~"^(industrial|warehouse|commercial|retail|factory|manufacture|supermarket|hangar|hospital|office|public|school|university)$"]
-`;
+const CI_FILTER = `["building"~"^(industrial|warehouse|commercial|retail|factory|manufacture|supermarket|hangar|office|public|hospital|school|university|shop|service|storage)$"]`;
 
-/**
- * Fetch commercial/industrial building footprints within a bounding box.
- * Uses Overpass QL with `out geom` to get polygon geometry inline.
- */
-export async function fetchBuildingsInBBox(bbox: BBox, minAreaSqm = 300): Promise<OverpassElement[]> {
+function buildQuery(bbox: BBox): string {
   const { minLat, minLon, maxLat, maxLon } = bbox;
-  const query = `
-    [out:json][timeout:60];
-    (
-      way${COMMERCIAL_INDUSTRIAL_FILTER}(${minLat},${minLon},${maxLat},${maxLon});
-      relation${COMMERCIAL_INDUSTRIAL_FILTER}(${minLat},${minLon},${maxLat},${maxLon});
-    );
-    out geom tags;
-  `;
+  return `[out:json][timeout:60];
+(
+  way${CI_FILTER}(${minLat},${minLon},${maxLat},${maxLon});
+);
+out geom tags;`;
+}
 
+function elementToBuilding(el: OverpassElement): BuildingFeature | null {
+  if (!el.geometry || el.geometry.length < 3) return null;
+
+  let coords = el.geometry.map((p) => [p.lon, p.lat] as [number, number]);
+  if (
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords = [...coords, coords[0]];
+  }
+
+  const poly = turf.polygon([coords]);
+  const areaSqm = Math.round(turf.area(poly));
+  if (areaSqm < 200) return null;
+
+  const c = turf.centroid(poly).geometry.coordinates;
+
+  return {
+    id: `osm_way_${el.id}`,
+    osmId: el.id,
+    source: "osm",
+    geometryGeoJSON: poly.geometry,
+    centroidLon: c[0],
+    centroidLat: c[1],
+    areaSqm,
+    buildingTag: el.tags?.building,
+    name: el.tags?.name ?? el.tags?.["name:en"],
+    operator: el.tags?.operator,
+    rawTags: el.tags,
+  };
+}
+
+export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[]> {
   const res = await fetch(config.overpassUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(query)}`,
+    body: `data=${encodeURIComponent(buildQuery(bbox))}`,
   });
-  if (!res.ok) throw new Error(`Overpass error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`Overpass ${res.status}: ${await res.text()}`);
 
-  const data = (await res.json()) as { elements: OverpassElement[] };
-  return data.elements.filter((el) => estimateArea(el) >= minAreaSqm);
+  const data = await res.json() as { elements: OverpassElement[] };
+  return data.elements
+    .map(elementToBuilding)
+    .filter((b): b is BuildingFeature => b !== null);
 }
 
-/**
- * Rough area estimate from inline geometry (planar approximation, good enough for filter).
- * For precise areas use Turf.js with the converted GeoJSON polygon.
- */
-function estimateArea(el: OverpassElement): number {
-  const coords = el.geometry;
-  if (!coords || coords.length < 3) return 0;
-  let area = 0;
-  for (let i = 0; i < coords.length - 1; i++) {
-    const a = coords[i];
-    const b = coords[i + 1];
-    area += (b.lon - a.lon) * (b.lat + a.lat);
-  }
-  const meanLat = (coords[0].lat * Math.PI) / 180;
-  const mPerDegLat = 111_320;
-  const mPerDegLon = 111_320 * Math.cos(meanLat);
-  return Math.abs((area / 2) * mPerDegLat * mPerDegLon);
+export function buildingsToGeoJSON(
+  buildings: BuildingFeature[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: buildings.map((b) => ({
+      type: "Feature" as const,
+      id: b.osmId,
+      properties: { ...b, geometryGeoJSON: undefined },
+      geometry: b.geometryGeoJSON,
+    })),
+  };
 }

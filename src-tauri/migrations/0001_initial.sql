@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS leads (
         CHECK (pipeline_stage IN ('to_contact','contacted','meeting','proposal','won','lost')),
     estimated_kwh_per_year   REAL,
     estimated_kwp            REAL,
+    monthly_kwh              TEXT,            -- JSON array of 12 values
+    company                  TEXT,
+    telephone                TEXT,
+    website                  TEXT,
+    tags                     TEXT,
+    owner                    TEXT,
     notes                    TEXT,
     created_at               TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
