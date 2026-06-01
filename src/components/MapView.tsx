@@ -33,22 +33,16 @@ export default function MapView() {
   const selectedIdRef = useRef<number | string | null>(null);
   const drawCoordsRef = useRef<[number, number][]>([]);
 
-  const {
-    buildings, drawMode, selectedBuildingId,
-    selectBuilding, addBuildings, setLeads,
-    setDrawMode, setLoadingBuildings, setLoadError, loadError,
-  } = useAppStore((s) => ({
-    buildings: s.buildings,
-    drawMode: s.drawMode,
-    selectedBuildingId: s.selectedBuildingId,
-    selectBuilding: s.selectBuilding,
-    addBuildings: s.addBuildings,
-    setLeads: s.setLeads,
-    setDrawMode: s.setDrawMode,
-    setLoadingBuildings: s.setLoadingBuildings,
-    setLoadError: s.setLoadError,
-    loadError: s.loadError,
-  }));
+  const buildings = useAppStore((s) => s.buildings);
+  const drawMode = useAppStore((s) => s.drawMode);
+  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
+  const loadError = useAppStore((s) => s.loadError);
+  const selectBuilding = useAppStore((s) => s.selectBuilding);
+  const addBuildings = useAppStore((s) => s.addBuildings);
+  const setLeads = useAppStore((s) => s.setLeads);
+  const setDrawMode = useAppStore((s) => s.setDrawMode);
+  const setLoadingBuildings = useAppStore((s) => s.setLoadingBuildings);
+  const setLoadError = useAppStore((s) => s.setLoadError);
 
   // Init map once
   useEffect(() => {

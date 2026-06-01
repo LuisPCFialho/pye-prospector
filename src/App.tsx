@@ -11,31 +11,17 @@ import Dashboard from "./components/Dashboard";
 import SearchFilter from "./components/SearchFilter";
 
 export default function App() {
-  const {
-    viewMode,
-    showLocationDetails,
-    showStreetView,
-    showSearchFilter,
-    setBuildings,
-    setLeads,
-  } = useAppStore((s) => ({
-    viewMode: s.viewMode,
-    showLocationDetails: s.showLocationDetails,
-    showStreetView: s.showStreetView,
-    showSearchFilter: s.showSearchFilter,
-    setBuildings: s.setBuildings,
-    setLeads: s.setLeads,
-  }));
+  const viewMode = useAppStore((s) => s.viewMode);
+  const showLocationDetails = useAppStore((s) => s.showLocationDetails);
+  const showStreetView = useAppStore((s) => s.showStreetView);
+  const showSearchFilter = useAppStore((s) => s.showSearchFilter);
+  const setBuildings = useAppStore((s) => s.setBuildings);
+  const setLeads = useAppStore((s) => s.setLeads);
 
-  // Load persisted data from SQLite on startup
   useEffect(() => {
-    getAllBuildings()
-      .then(setBuildings)
-      .catch(() => {});
-    getAllLeads()
-      .then(setLeads)
-      .catch(() => {});
-  }, [setBuildings, setLeads]);
+    getAllBuildings().then(setBuildings).catch(() => {});
+    getAllLeads().then(setLeads).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-screen w-screen flex overflow-hidden bg-[#0f0f1a] text-white">

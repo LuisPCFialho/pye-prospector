@@ -23,20 +23,14 @@ const PIPELINE_OPTS = [
 ] as const;
 
 export default function LocationSummary() {
-  const {
-    selectedBuildingId, buildings, leads,
-    showLocationSummary, selectBuilding,
-    setShowLocationDetails, setShowStreetView, upsertLead,
-  } = useAppStore((s) => ({
-    selectedBuildingId: s.selectedBuildingId,
-    buildings: s.buildings,
-    leads: s.leads,
-    showLocationSummary: s.showLocationSummary,
-    selectBuilding: s.selectBuilding,
-    setShowLocationDetails: s.setShowLocationDetails,
-    setShowStreetView: s.setShowStreetView,
-    upsertLead: s.upsertLead,
-  }));
+  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
+  const buildings = useAppStore((s) => s.buildings);
+  const leads = useAppStore((s) => s.leads);
+  const showLocationSummary = useAppStore((s) => s.showLocationSummary);
+  const selectBuilding = useAppStore((s) => s.selectBuilding);
+  const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
+  const setShowStreetView = useAppStore((s) => s.setShowStreetView);
+  const upsertLead = useAppStore((s) => s.upsertLead);
 
   const [tab, setTab] = useState<Tab>("flag");
   const [calcingSolar, setCalcingSolar] = useState(false);

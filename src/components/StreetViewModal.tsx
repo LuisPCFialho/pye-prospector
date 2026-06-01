@@ -3,11 +3,9 @@ import { useAppStore } from "../store/appStore";
 import { findNearestImage, mapillaryEmbedUrl, googleStreetViewUrl } from "../lib/mapillary";
 
 export default function StreetViewModal() {
-  const { selectedBuildingId, buildings, setShowStreetView } = useAppStore((s) => ({
-    selectedBuildingId: s.selectedBuildingId,
-    buildings: s.buildings,
-    setShowStreetView: s.setShowStreetView,
-  }));
+  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
+  const buildings = useAppStore((s) => s.buildings);
+  const setShowStreetView = useAppStore((s) => s.setShowStreetView);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);

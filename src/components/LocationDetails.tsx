@@ -7,17 +7,12 @@ import SolarChart from "./SolarChart";
 type Tab = "flag" | "solar" | "individual" | "metadata" | "streetview";
 
 export default function LocationDetails() {
-  const {
-    selectedBuildingId, buildings, leads,
-    setShowLocationDetails, setShowStreetView, upsertLead,
-  } = useAppStore((s) => ({
-    selectedBuildingId: s.selectedBuildingId,
-    buildings: s.buildings,
-    leads: s.leads,
-    setShowLocationDetails: s.setShowLocationDetails,
-    setShowStreetView: s.setShowStreetView,
-    upsertLead: s.upsertLead,
-  }));
+  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
+  const buildings = useAppStore((s) => s.buildings);
+  const leads = useAppStore((s) => s.leads);
+  const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
+  const setShowStreetView = useAppStore((s) => s.setShowStreetView);
+  const upsertLead = useAppStore((s) => s.upsertLead);
 
   const [tab, setTab] = useState<Tab>("flag");
   const [calcingSolar, setCalcingSolar] = useState(false);

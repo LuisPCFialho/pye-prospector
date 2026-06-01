@@ -15,24 +15,17 @@ const NAV_ITEMS = [
 type NavId = (typeof NAV_ITEMS)[number]["id"];
 
 export default function Sidebar() {
-  const {
-    drawMode, isLoadingBuildings, viewMode,
-    setDrawMode, setLoadingBuildings, setLoadError,
-    addBuildings, setLeads, setViewMode,
-    setShowSearchFilter, showSearchFilter,
-  } = useAppStore((s) => ({
-    drawMode: s.drawMode,
-    isLoadingBuildings: s.isLoadingBuildings,
-    viewMode: s.viewMode,
-    setDrawMode: s.setDrawMode,
-    setLoadingBuildings: s.setLoadingBuildings,
-    setLoadError: s.setLoadError,
-    addBuildings: s.addBuildings,
-    setLeads: s.setLeads,
-    setViewMode: s.setViewMode,
-    setShowSearchFilter: s.setShowSearchFilter,
-    showSearchFilter: s.showSearchFilter,
-  }));
+  const drawMode = useAppStore((s) => s.drawMode);
+  const isLoadingBuildings = useAppStore((s) => s.isLoadingBuildings);
+  const viewMode = useAppStore((s) => s.viewMode);
+  const showSearchFilter = useAppStore((s) => s.showSearchFilter);
+  const setDrawMode = useAppStore((s) => s.setDrawMode);
+  const setLoadingBuildings = useAppStore((s) => s.setLoadingBuildings);
+  const setLoadError = useAppStore((s) => s.setLoadError);
+  const addBuildings = useAppStore((s) => s.addBuildings);
+  const setLeads = useAppStore((s) => s.setLeads);
+  const setViewMode = useAppStore((s) => s.setViewMode);
+  const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
 
   async function handleGetRooftops() {
     const bbox = getViewportBBox();

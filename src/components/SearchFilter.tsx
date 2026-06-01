@@ -2,19 +2,13 @@ import { useAppStore } from "../store/appStore";
 import { SOLAR_STATUS_LABELS, PIPELINE_LABELS } from "../types/building";
 
 export default function SearchFilter() {
-  const {
-    filterSolarStatus, filterPipelineStage, filterMinAreaSqm,
-    setFilterSolarStatus, setFilterPipelineStage, setFilterMinAreaSqm,
-    setShowSearchFilter,
-  } = useAppStore((s) => ({
-    filterSolarStatus: s.filterSolarStatus,
-    filterPipelineStage: s.filterPipelineStage,
-    filterMinAreaSqm: s.filterMinAreaSqm,
-    setFilterSolarStatus: s.setFilterSolarStatus,
-    setFilterPipelineStage: s.setFilterPipelineStage,
-    setFilterMinAreaSqm: s.setFilterMinAreaSqm,
-    setShowSearchFilter: s.setShowSearchFilter,
-  }));
+  const filterSolarStatus = useAppStore((s) => s.filterSolarStatus);
+  const filterPipelineStage = useAppStore((s) => s.filterPipelineStage);
+  const filterMinAreaSqm = useAppStore((s) => s.filterMinAreaSqm);
+  const setFilterSolarStatus = useAppStore((s) => s.setFilterSolarStatus);
+  const setFilterPipelineStage = useAppStore((s) => s.setFilterPipelineStage);
+  const setFilterMinAreaSqm = useAppStore((s) => s.setFilterMinAreaSqm);
+  const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
 
   return (
     <div className="absolute top-4 left-[228px] z-20 w-64 bg-[#1a1a2e] border border-slate-700 rounded-xl shadow-2xl overflow-hidden">

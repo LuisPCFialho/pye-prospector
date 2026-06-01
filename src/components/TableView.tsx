@@ -6,16 +6,13 @@ import {
 } from "../types/building";
 
 export default function TableView() {
-  const { buildings, leads, filterSolarStatus, filterPipelineStage, filterMinAreaSqm, selectBuilding, setViewMode } =
-    useAppStore((s) => ({
-      buildings: s.buildings,
-      leads: s.leads,
-      filterSolarStatus: s.filterSolarStatus,
-      filterPipelineStage: s.filterPipelineStage,
-      filterMinAreaSqm: s.filterMinAreaSqm,
-      selectBuilding: s.selectBuilding,
-      setViewMode: s.setViewMode,
-    }));
+  const buildings = useAppStore((s) => s.buildings);
+  const leads = useAppStore((s) => s.leads);
+  const filterSolarStatus = useAppStore((s) => s.filterSolarStatus);
+  const filterPipelineStage = useAppStore((s) => s.filterPipelineStage);
+  const filterMinAreaSqm = useAppStore((s) => s.filterMinAreaSqm);
+  const selectBuilding = useAppStore((s) => s.selectBuilding);
+  const setViewMode = useAppStore((s) => s.setViewMode);
 
   const rows = buildings
     .filter((b) => {
