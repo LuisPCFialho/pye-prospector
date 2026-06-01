@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
+import { scoreLead } from "../lib/scoring";
+import ScoringBadge from "./ScoringBadge";
 
 type Tab = "flag" | "solar" | "individual";
 
@@ -32,13 +34,29 @@ export default function LocationSummary() {
   const setShowStreetView = useAppStore((s) => s.setShowStreetView);
   const upsertLead = useAppStore((s) => s.upsertLead);
 
+  const setShowAIAssistant = useAppStore((s) => s.setShowAIAssistant);
   const [tab, setTab] = useState<Tab>("flag");
   const [calcingSolar, setCalcingSolar] = useState(false);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead = selectedBuildingId ? leads[selectedBuildingId] : undefined;
 
+  // Auto-score: refresh whenever building or lead changes
+  useEffect(() => {
+    if (!building) return;
+    const { score, explanations } = scoreLead(building, lead);
+    if (lead && (lead.score !== score || JSON.stringify(lead.scoreExplanations) !== JSON.stringify(explanations))) {
+      const updated = { ...lead, score, scoreExplanations: explanations, updatedAt: new Date().toISOString() };
+      saveLead(updated).catch(() => {});
+      upsertLead(updated);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [building?.id, lead?.solarStatus, lead?.pipelineStage, lead?.estimatedKwp, lead?.company, lead?.cae]);
+
   if (!showLocationSummary || !building) return null;
+
+  // Compute current score (using updated lead from store)
+  const { score, explanations } = scoreLead(building, lead);
 
   async function handleCalcSolar() {
     if (!building) return;
@@ -126,6 +144,11 @@ export default function LocationSummary() {
         ))}
       </div>
 
+      {/* Score banner */}
+      <div className="px-4 py-3 bg-[#12121e]/50 border-b border-slate-700">
+        <ScoringBadge score={score} explanations={explanations} size="md" showExplanations={false} />
+      </div>
+
       {/* Body */}
       <div className="p-4 space-y-3 text-sm">
         {tab === "flag" && (
@@ -197,18 +220,27 @@ export default function LocationSummary() {
       </div>
 
       {/* Footer */}
-      <div className="px-4 pb-3 flex gap-2">
+      <div className="px-4 pb-3 flex gap-2 flex-wrap">
         <button
+          type="button"
           onClick={() => setShowLocationDetails(true)}
           className="flex-1 h-7 rounded bg-slate-700 hover:bg-slate-600 text-xs"
         >
-          Ver detalhes
+          Detalhes
         </button>
         <button
+          type="button"
           onClick={() => setShowStreetView(true)}
           className="flex-1 h-7 rounded bg-slate-700 hover:bg-slate-600 text-xs"
         >
           Street View
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowAIAssistant(true)}
+          className="flex-1 h-7 rounded bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 text-xs"
+        >
+          🤖 AI
         </button>
         {building.osmId && (
           <a

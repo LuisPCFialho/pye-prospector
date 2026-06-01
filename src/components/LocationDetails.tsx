@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
-import { saveLead } from "../db/database";
+import { saveLead, duplicateLead, getAllLeads } from "../db/database";
+import { scoreLead } from "../lib/scoring";
 import SolarChart from "./SolarChart";
+import NotesAndTasks from "./NotesAndTasks";
+import ScoringBadge from "./ScoringBadge";
 
-type Tab = "flag" | "solar" | "individual" | "metadata" | "streetview";
+type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "ai";
 
 export default function LocationDetails() {
   const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
@@ -12,7 +15,9 @@ export default function LocationDetails() {
   const leads = useAppStore((s) => s.leads);
   const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
   const setShowStreetView = useAppStore((s) => s.setShowStreetView);
+  const setShowAIAssistant = useAppStore((s) => s.setShowAIAssistant);
   const upsertLead = useAppStore((s) => s.upsertLead);
+  const setLeads = useAppStore((s) => s.setLeads);
 
   const [tab, setTab] = useState<Tab>("flag");
   const [calcingSolar, setCalcingSolar] = useState(false);
@@ -21,6 +26,18 @@ export default function LocationDetails() {
   const lead = selectedBuildingId ? leads[selectedBuildingId] : undefined;
 
   if (!building) return null;
+
+  function ensureLead() {
+    if (lead) return lead;
+    return {
+      id: crypto.randomUUID(),
+      buildingId: building!.id,
+      solarStatus: "unknown" as const,
+      pipelineStage: "to_contact" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
 
   async function handleCalcSolar() {
     if (!building) return;
@@ -32,71 +49,87 @@ export default function LocationDetails() {
         lon: building.centroidLon,
         peakPowerKwp: kwp,
       });
+      const base = ensureLead();
       const updated = {
-        ...(lead ?? {
-          id: crypto.randomUUID(),
-          buildingId: building.id,
-          solarStatus: "unknown" as const,
-          pipelineStage: "to_contact" as const,
-          createdAt: new Date().toISOString(),
-        }),
+        ...base,
         estimatedKwhPerYear: result.yearlyEnergyKwh,
         estimatedKwp: kwp,
         monthlyKwh: result.monthlyAverageKwh,
+        estimatedValueEur: Math.round(result.yearlyEnergyKwh * 0.16 * 8), // 8-year savings
         updatedAt: new Date().toISOString(),
       };
-      await saveLead(updated as typeof updated & { updatedAt: string });
-      upsertLead(updated as typeof updated & { updatedAt: string });
+      try { await saveLead(updated); } catch {}
+      upsertLead(updated);
     } finally {
       setCalcingSolar(false);
     }
   }
 
-  async function handleField(field: string, value: string) {
+  async function handleField(field: string, value: string | number | undefined) {
     if (!building) return;
+    const base = ensureLead();
     const updated = {
-      ...(lead ?? {
-        id: crypto.randomUUID(),
-        buildingId: building.id,
-        solarStatus: "unknown" as const,
-        pipelineStage: "to_contact" as const,
-        createdAt: new Date().toISOString(),
-      }),
+      ...base,
       [field]: value,
       updatedAt: new Date().toISOString(),
-    };
-    await saveLead(updated as typeof updated & { updatedAt: string });
-    upsertLead(updated as typeof updated & { updatedAt: string });
+    } as typeof base & Record<string, unknown>;
+    try { await saveLead(updated as Parameters<typeof saveLead>[0]); } catch {}
+    upsertLead(updated as Parameters<typeof saveLead>[0]);
+  }
+
+  async function handleDuplicate() {
+    if (!lead) return;
+    try {
+      await duplicateLead(lead.id);
+      const all = await getAllLeads();
+      setLeads(all);
+    } catch (e) { console.warn(e); }
   }
 
   const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);
   const density = building.areaSqm > 0 ? kwp / building.areaSqm : 0;
+  const { score, explanations } = scoreLead(building, lead);
+
   const tabs: { key: Tab; label: string }[] = [
-    { key: "flag", label: "🚩 Flag" },
+    { key: "flag", label: "🚩 Lead" },
     { key: "solar", label: "☀️ Solar" },
-    { key: "individual", label: "👤 Individual" },
-    { key: "metadata", label: "🔍 Metadata" },
-    { key: "streetview", label: "📷 Street View" },
+    { key: "individual", label: "🏢 Empresa" },
+    { key: "notes", label: "📝 Notas & Tarefas" },
+    { key: "metadata", label: "🔍 OSM" },
+    { key: "ai", label: "🤖 AI" },
   ];
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
-      <div className="w-[680px] max-h-[90vh] bg-[#1a1a2e] border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-        {/* Header */}
+      <div className="w-[760px] max-h-[92vh] bg-[#1a1a2e] border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
         <div className="flex items-center justify-between px-5 py-3 bg-[#12121e] border-b border-slate-700 shrink-0">
-          <span className="font-semibold">Location Details</span>
-          <button
-            onClick={() => setShowLocationDetails(false)}
-            className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="font-semibold">Location Details</span>
+            <ScoringBadge score={score} size="sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            {lead && (
+              <button
+                type="button"
+                onClick={handleDuplicate}
+                className="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+                title="Duplicar lead"
+              >
+                ⎘ Duplicar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowLocationDetails(false)}
+              className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center"
+            >×</button>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-slate-700 shrink-0">
+        <div className="flex border-b border-slate-700 shrink-0 overflow-x-auto">
           {tabs.map((t) => (
             <button
+              type="button"
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`px-4 py-2.5 text-xs font-medium transition whitespace-nowrap ${
@@ -110,24 +143,48 @@ export default function LocationDetails() {
           ))}
         </div>
 
-        {/* Content */}
         <div className="overflow-y-auto flex-1 p-5">
           {tab === "flag" && (
-            <div className="grid grid-cols-2 gap-4">
-              <ROField label="Tipo" value="Rooftop" />
-              <ROField label="Área" value={`m² ${building.areaSqm.toLocaleString("pt-PT")}`} />
-              <ROField label="Lat / Lon" value={`${building.centroidLat.toFixed(5)}, ${building.centroidLon.toFixed(5)}`} />
-              <ROField label="Tag OSM" value={building.buildingTag ?? "—"} />
-              <EditField label="Empresa" value={lead?.company ?? ""} onChange={(v) => handleField("company", v)} />
-              <EditField label="Telefone" value={lead?.telephone ?? ""} onChange={(v) => handleField("telephone", v)} />
-              <EditField label="Website" value={lead?.website ?? ""} onChange={(v) => handleField("website", v)} />
-              <EditField label="Tags" value={lead?.tags ?? ""} onChange={(v) => handleField("tags", v)} />
-              <div className="col-span-2">
-                <EditField label="Notas" value={lead?.notes ?? ""} onChange={(v) => handleField("notes", v)} textarea />
+            <div className="space-y-4">
+              <div className="bg-[#12121e] rounded-lg p-3 border border-slate-700/50">
+                <ScoringBadge score={score} explanations={explanations} size="lg" showExplanations />
               </div>
-              <div className="col-span-2 text-[10px] text-slate-500">
-                Adicionado: {lead?.createdAt ? new Date(lead.createdAt).toLocaleDateString("pt-PT") : "Hoje"} ·
-                Última alteração: {lead?.updatedAt ? new Date(lead.updatedAt).toLocaleDateString("pt-PT") : "—"}
+              <div className="grid grid-cols-2 gap-4">
+                <ROField label="Tipo" value={`Rooftop · ${building.buildingTag ?? "—"}`} />
+                <ROField label="Área" value={`${building.areaSqm.toLocaleString("pt-PT")} m²`} />
+                <ROField label="Lat / Lon" value={`${building.centroidLat.toFixed(5)}, ${building.centroidLon.toFixed(5)}`} />
+                <ROField label="Source" value={building.source} />
+                <SelectField
+                  label="Estado Solar"
+                  value={lead?.solarStatus ?? "unknown"}
+                  opts={[
+                    { value: "unknown", label: "Desconhecido" },
+                    { value: "no_panels", label: "Sem painéis" },
+                    { value: "has_panels", label: "Com painéis" },
+                    { value: "partial", label: "Parcial" },
+                    { value: "inconclusive", label: "Inconclusivo" },
+                  ]}
+                  onChange={(v) => handleField("solarStatus", v)}
+                />
+                <SelectField
+                  label="Pipeline"
+                  value={lead?.pipelineStage ?? "to_contact"}
+                  opts={[
+                    { value: "to_contact", label: "Por contactar" },
+                    { value: "contacted", label: "Contactado" },
+                    { value: "meeting", label: "Reunião" },
+                    { value: "proposal", label: "Proposta" },
+                    { value: "won", label: "Ganho" },
+                    { value: "lost", label: "Perdido" },
+                  ]}
+                  onChange={(v) => handleField("pipelineStage", v)}
+                />
+                <EditField label="Valor Estimado (€)" type="number" value={lead?.estimatedValueEur ?? ""} onChange={(v) => handleField("estimatedValueEur", v === "" ? undefined : Number(v))} />
+                <EditField label="Probabilidade (%)" type="number" value={lead?.probability ?? ""} onChange={(v) => handleField("probability", v === "" ? undefined : Number(v))} />
+                <div className="col-span-2 text-[10px] text-slate-500">
+                  Criado: {lead?.createdAt ? new Date(lead.createdAt).toLocaleDateString("pt-PT") : "—"} ·
+                  Atualizado: {lead?.updatedAt ? new Date(lead.updatedAt).toLocaleDateString("pt-PT") : "—"}
+                </div>
               </div>
             </div>
           )}
@@ -135,26 +192,27 @@ export default function LocationDetails() {
           {tab === "solar" && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <ROField label="Área" value={`m² ${building.areaSqm.toLocaleString("pt-PT")}`} />
-                <ROField label="Potencial solar" value={`kWp ${kwp.toFixed(1)}`} accent />
-                <ROField label="Densidade solar" value={`kWp/m² ${density.toFixed(2)}`} />
+                <ROField label="Área" value={`${building.areaSqm.toLocaleString("pt-PT")} m²`} />
+                <ROField label="Potencial Solar" value={`${kwp.toFixed(1)} kWp`} accent />
+                <ROField label="Densidade" value={`${density.toFixed(3)} kWp/m²`} />
                 {lead?.estimatedKwhPerYear && (
-                  <ROField
-                    label="Geração anual estimada"
-                    value={`${(lead.estimatedKwhPerYear / 1000).toFixed(1)} MWh/ano`}
-                    accent
-                  />
+                  <ROField label="Geração Anual" value={`${(lead.estimatedKwhPerYear / 1000).toFixed(1)} MWh`} accent />
                 )}
+                {lead?.estimatedKwhPerYear && (
+                  <ROField label="Poupança Anual" value={`${Math.round(lead.estimatedKwhPerYear * 0.16).toLocaleString("pt-PT")} €`} accent />
+                )}
+                <ROField label="Latitude" value={`${building.centroidLat.toFixed(4)}°`} />
               </div>
               {lead?.monthlyKwh ? (
                 <SolarChart monthlyKwh={lead.monthlyKwh} totalKwh={lead.estimatedKwhPerYear ?? 0} />
               ) : (
                 <button
+                  type="button"
                   onClick={handleCalcSolar}
                   disabled={calcingSolar}
                   className="w-full py-2 rounded bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-slate-950 text-sm font-semibold"
                 >
-                  {calcingSolar ? "A calcular PVGIS…" : "☀️ Calcular potencial solar (PVGIS)"}
+                  {calcingSolar ? "A calcular…" : "☀️ Calcular Potencial (PVGIS)"}
                 </button>
               )}
             </div>
@@ -163,43 +221,99 @@ export default function LocationDetails() {
           {tab === "individual" && (
             <div className="grid grid-cols-2 gap-4">
               <EditField label="Empresa" value={lead?.company ?? ""} onChange={(v) => handleField("company", v)} />
+              <EditField label="NIF" value={lead?.nif ?? ""} onChange={(v) => handleField("nif", v)} />
+              <EditField label="CAE" value={lead?.cae ?? ""} onChange={(v) => handleField("cae", v)} />
+              <SelectField
+                label="Setor"
+                value={lead?.buildingUse ?? "other"}
+                opts={[
+                  { value: "food_beverage", label: "Alimentar/Bebidas" },
+                  { value: "metalwork", label: "Metalúrgica" },
+                  { value: "logistics", label: "Logística" },
+                  { value: "retail", label: "Retalho" },
+                  { value: "hotels", label: "Hotelaria" },
+                  { value: "agriculture", label: "Agricultura" },
+                  { value: "office", label: "Escritórios" },
+                  { value: "other", label: "Outro" },
+                ]}
+                onChange={(v) => handleField("buildingUse", v)}
+              />
               <EditField label="Telefone" value={lead?.telephone ?? ""} onChange={(v) => handleField("telephone", v)} />
               <EditField label="Website" value={lead?.website ?? ""} onChange={(v) => handleField("website", v)} />
               <EditField label="Dono / Proprietário" value={lead?.owner ?? ""} onChange={(v) => handleField("owner", v)} />
-              <div className="col-span-2">
-                <EditField label="Notas" value={lead?.notes ?? ""} onChange={(v) => handleField("notes", v)} textarea />
-              </div>
+              <EditField label="Tags" value={lead?.tags ?? ""} onChange={(v) => handleField("tags", v)} />
+              {lead?.company && (
+                <div className="col-span-2 flex gap-2 mt-2">
+                  <a
+                    href={`https://www.google.com/search?q=${encodeURIComponent(lead.company + " contactos website Portugal")}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex-1 text-center py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200"
+                  >
+                    🔍 Pesquisar empresa no Google
+                  </a>
+                  <a
+                    href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(lead.company)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex-1 text-center py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200"
+                  >
+                    💼 Pesquisar no LinkedIn
+                  </a>
+                </div>
+              )}
             </div>
+          )}
+
+          {tab === "notes" && (
+            lead ? (
+              <NotesAndTasks leadId={lead.id} />
+            ) : (
+              <p className="text-xs text-slate-500 italic py-6 text-center">
+                Cria um lead primeiro (clica num separador acima) para adicionar notas e tarefas.
+              </p>
+            )
           )}
 
           {tab === "metadata" && (
             <div className="space-y-2">
-              <p className="text-xs text-slate-400 mb-3">Tags OSM brutas para este edifício:</p>
+              <p className="text-xs text-slate-400 mb-3">Tags OSM brutas:</p>
               {Object.entries(building.rawTags ?? {}).map(([k, v]) => (
                 <div key={k} className="flex gap-2 text-xs">
                   <span className="text-slate-400 w-32 shrink-0">{k}</span>
                   <span className="text-slate-100">{v}</span>
                 </div>
               ))}
-              {building.osmId && (
-                <a
-                  href={`https://www.openstreetmap.org/way/${building.osmId}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="inline-block mt-3 text-xs text-brand-400 hover:text-brand-300"
+              <div className="flex gap-3 mt-4 pt-3 border-t border-slate-700/50">
+                {building.osmId && (
+                  <a
+                    href={`https://www.openstreetmap.org/way/${building.osmId}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-brand-400 hover:text-brand-300"
+                  >
+                    Abrir no OSM ↗
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowLocationDetails(false); setShowStreetView(true); }}
+                  className="text-xs text-brand-400 hover:text-brand-300"
                 >
-                  Abrir no OpenStreetMap ↗
-                </a>
-              )}
+                  Street View ↗
+                </button>
+              </div>
             </div>
           )}
 
-          {tab === "streetview" && (
-            <div className="text-center py-6">
+          {tab === "ai" && (
+            <div className="text-center py-8 space-y-3">
+              <p className="text-sm text-slate-300">
+                Usa o AI Assistant para gerar resumo executivo, email de outreach ou script de chamada para este lead.
+              </p>
               <button
-                onClick={() => { setShowLocationDetails(false); setShowStreetView(true); }}
+                type="button"
+                onClick={() => { setShowLocationDetails(false); setShowAIAssistant(true); }}
                 className="px-6 py-2 rounded bg-brand-500 hover:bg-brand-400 text-slate-950 text-sm font-semibold"
               >
-                📷 Abrir Street View
+                🤖 Abrir AI Assistant
               </button>
             </div>
           )}
@@ -219,20 +333,58 @@ function ROField({ label, value, accent }: { label: string; value: string; accen
 }
 
 function EditField({
-  label, value, onChange, textarea,
-}: { label: string; value: string; onChange: (v: string) => void; textarea?: boolean }) {
+  label, value, onChange, textarea, type,
+}: {
+  label: string;
+  value: string | number;
+  onChange: (v: string) => void;
+  textarea?: boolean;
+  type?: string;
+}) {
   const cls = "w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-brand-500";
   return (
     <div>
       <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">{label}</div>
       {textarea ? (
         <textarea
-          className={`${cls} resize-none h-20`} value={value}
+          className={`${cls} resize-none h-20`}
+          value={String(value)}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
-        <input className={cls} value={value} onChange={(e) => onChange(e.target.value)} />
+        <input
+          type={type ?? "text"}
+          className={cls}
+          value={String(value)}
+          onChange={(e) => onChange(e.target.value)}
+        />
       )}
+    </div>
+  );
+}
+
+function SelectField({
+  label, value, opts, onChange,
+}: {
+  label: string;
+  value: string;
+  opts: readonly { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">{label}</div>
+      <select
+        aria-label={label}
+        title={label}
+        className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {opts.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
     </div>
   );
 }

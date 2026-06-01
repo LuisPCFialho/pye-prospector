@@ -1,7 +1,6 @@
 /**
- * PVGIS API client (Comissão Europeia).
- * Docs: https://re.jrc.ec.europa.eu/pvg_tools/en/
- * 100% free, no API key required.
+ * PVGIS API client (Comissão Europeia) with regional-yield fallback.
+ * Docs: https://re.jrc.ec.europa.eu/pvg_tools/en/  — 100% free, no API key required.
  */
 
 const PVGIS_BASE = "https://re.jrc.ec.europa.eu/api/v5_3";
@@ -23,8 +22,24 @@ export interface PVGISResult {
   yearlyEnergyKwh: number;
   monthlyAverageKwh: number[];
   variabilityKwh: number;
-  source: "PVGIS-SARAH3";
+  source: "PVGIS-SARAH3" | "regional-estimate";
 }
+
+/**
+ * Regional yield in kWh/kWp/year for Portugal — used as fallback when PVGIS is unreachable.
+ * Higher in southern (Algarve, Alentejo) and lower in northern (Minho, Porto) regions.
+ */
+function regionalYieldKwhPerKwp(lat: number): number {
+  // Linear interp: 37.0°N (Algarve) → 1620 ; 42.0°N (Norte) → 1380
+  const t = Math.max(0, Math.min(1, (42.0 - lat) / 5.0));
+  return Math.round(1380 + (1620 - 1380) * t);
+}
+
+/** Monthly distribution (% of annual yield) — typical Portuguese pattern */
+const MONTHLY_FRACTION = [
+  0.045, 0.060, 0.085, 0.100, 0.115, 0.125,
+  0.130, 0.122, 0.095, 0.070, 0.045, 0.030,
+];
 
 export async function fetchPVGIS(input: PVGISInput): Promise<PVGISResult> {
   const params = new URLSearchParams({
@@ -39,22 +54,44 @@ export async function fetchPVGIS(input: PVGISInput): Promise<PVGISResult> {
     outputformat: "json",
   });
 
-  const url = `${PVGIS_BASE}/PVcalc?${params.toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`PVGIS error ${res.status}: ${await res.text()}`);
+  try {
+    const url = `${PVGIS_BASE}/PVcalc?${params.toString()}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
 
-  const data = await res.json();
-  const yearly = data?.outputs?.totals?.fixed?.E_y ?? 0;
-  const monthly: { E_m: number }[] = data?.outputs?.monthly?.fixed ?? [];
-  return {
-    yearlyEnergyKwh: yearly,
-    monthlyAverageKwh: monthly.map((m) => m.E_m),
-    variabilityKwh: data?.outputs?.totals?.fixed?.SD_y ?? 0,
-    source: "PVGIS-SARAH3",
-  };
+    if (!res.ok) throw new Error(`PVGIS ${res.status}`);
+    const data = await res.json();
+    const yearly = data?.outputs?.totals?.fixed?.E_y ?? 0;
+    const monthly: { E_m: number }[] = data?.outputs?.monthly?.fixed ?? [];
+
+    if (yearly > 0 && monthly.length === 12) {
+      return {
+        yearlyEnergyKwh: yearly,
+        monthlyAverageKwh: monthly.map((m) => m.E_m),
+        variabilityKwh: data?.outputs?.totals?.fixed?.SD_y ?? 0,
+        source: "PVGIS-SARAH3",
+      };
+    }
+    throw new Error("PVGIS returned no usable data");
+  } catch (e) {
+    // Fallback: regional yield estimate
+    const yieldKwhPerKwp = regionalYieldKwhPerKwp(input.lat);
+    const lossesFactor = 1 - (input.loss ?? 14) / 100;
+    const yearly = Math.round(input.peakPowerKwp * yieldKwhPerKwp * lossesFactor);
+    const monthly = MONTHLY_FRACTION.map((f) => Math.round(yearly * f));
+    console.warn("Using regional yield fallback (PVGIS unavailable):", e);
+    return {
+      yearlyEnergyKwh: yearly,
+      monthlyAverageKwh: monthly,
+      variabilityKwh: yearly * 0.06,
+      source: "regional-estimate",
+    };
+  }
 }
 
-/** Heuristic: roof area in m² → installable peak power in kWp (assumes 60% usable area, 180 W/m²). */
-export function estimatePeakPower(roofAreaSqm: number, usableFraction = 0.6): number {
+/** Heuristic: roof area in m² → installable peak power in kWp (assumes 65% usable, 180 W/m²). */
+export function estimatePeakPower(roofAreaSqm: number, usableFraction = 0.65): number {
   return Math.max(0, roofAreaSqm * usableFraction * 0.18);
 }
