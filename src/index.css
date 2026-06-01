@@ -17,11 +17,18 @@ body,
   color: #94a3b8;
 }
 
-/* Map container fills its positioned parent completely */
+/* Outer wrapper fills the relative parent */
 .map-container {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   left: 0;
+}
+
+/* Inner div passed to MapLibre — MapLibre overrides position to relative,
+   so we use width/height to fill the wrapper instead of inset */
+.map-inner {
+  width: 100%;
+  height: 100%;
 }

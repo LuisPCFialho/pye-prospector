@@ -249,7 +249,10 @@ export default function MapView() {
 
   return (
     <>
-      <div ref={containerRef} className="map-container" />
+      {/* Wrapper keeps absolute positioning — MapLibre overrides position:relative on the inner div */}
+      <div className="map-container">
+        <div ref={containerRef} className="map-inner" />
+      </div>
 
       {loadError && (
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 bg-red-900/95 border border-red-700 text-red-100 text-xs px-4 py-2.5 rounded-lg shadow-xl max-w-md text-center">
