@@ -31,10 +31,17 @@ export default function Sidebar() {
     const bbox = getViewportBBox();
     if (!bbox) return;
 
-    const bboxAreaDeg =
-      (bbox.maxLon - bbox.minLon) * (bbox.maxLat - bbox.minLat);
-    if (bboxAreaDeg > 0.05) {
-      setLoadError("Área demasiado grande. Aproxima o mapa primeiro (zoom ≥ 13).");
+    const lonSpan = bbox.maxLon - bbox.minLon;
+    const latSpan = bbox.maxLat - bbox.minLat;
+    const bboxAreaDeg = lonSpan * latSpan;
+
+    if (bboxAreaDeg > 0.04) {
+      setLoadError("Área demasiado grande. Aproxima o mapa (zoom ≥ 14) e tenta novamente.");
+      setTimeout(() => setLoadError(null), 4000);
+      return;
+    }
+    if (bboxAreaDeg < 0.000001) {
+      setLoadError("Zoom demasiado elevado. Afasta o mapa um pouco.");
       setTimeout(() => setLoadError(null), 4000);
       return;
     }
@@ -43,11 +50,18 @@ export default function Sidebar() {
     setLoadError(null);
     try {
       const buildings = await fetchBuildingsInBBox(bbox);
-      await saveBuildingsBatch(buildings);
-      addBuildings(buildings);
-
-      const leads = await getAllLeads();
-      setLeads(leads);
+      if (buildings.length === 0) {
+        setLoadError("Nenhum edifício encontrado nesta área. Tenta outra zona.");
+        setTimeout(() => setLoadError(null), 4000);
+      } else {
+        addBuildings(buildings);
+        try {
+          await saveBuildingsBatch(buildings);
+          setLeads(await getAllLeads());
+        } catch {
+          // No Tauri bridge (browser dev mode) — skip persistence
+        }
+      }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Erro Overpass");
     } finally {

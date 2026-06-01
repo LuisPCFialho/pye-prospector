@@ -9,6 +9,7 @@ import StreetViewModal from "./components/StreetViewModal";
 import TableView from "./components/TableView";
 import Dashboard from "./components/Dashboard";
 import SearchFilter from "./components/SearchFilter";
+import MapSearch from "./components/MapSearch";
 
 export default function App() {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -26,10 +27,11 @@ export default function App() {
   return (
     <div className="h-screen w-screen flex overflow-hidden bg-[#0f0f1a] text-white">
       <Sidebar />
-      <main className="flex-1 relative overflow-hidden">
+      <main className="flex-1 relative">
         {viewMode === "map" && (
           <>
             <MapView />
+            <MapSearch />
             <LocationSummary />
             {showSearchFilter && <SearchFilter />}
             {showLocationDetails && <LocationDetails />}

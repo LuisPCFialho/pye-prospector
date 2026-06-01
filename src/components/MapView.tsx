@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
 import { config } from "../config";
 import { setMapInstance } from "../lib/mapInstance";
@@ -33,9 +33,12 @@ const DRAW_SOURCE = "draw-polygon";
 function addAppLayers(map: maplibregl.Map) {
   if (map.getSource(BUILDINGS_SOURCE)) return; // already added
 
+  // Seed with any buildings already in the store (handles style swap race condition)
+  const existingData = buildingsToGeoJSON(useAppStore.getState().buildings);
+
   map.addSource(BUILDINGS_SOURCE, {
     type: "geojson",
-    data: { type: "FeatureCollection", features: [] },
+    data: existingData,
     generateId: true,
   });
   map.addLayer({
@@ -235,9 +238,18 @@ export default function MapView() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (src) src.setData(buildingsToGeoJSON(buildings));
+    if (!map) return;
+    const geojson = buildingsToGeoJSON(buildings);
+    const apply = () => {
+      const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+      if (src) src.setData(geojson);
+    };
+    // If style is mid-load (e.g. MapTiler swap), defer until style.load fires
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
   }, [buildings]);
 
   useEffect(() => {
@@ -266,23 +278,78 @@ export default function MapView() {
         </div>
       )}
 
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2">
-        <MapBtn title="Camadas" icon="⊞" />
-        <MapBtn title="Localização" icon="◎" />
-      </div>
+      <BottomToolbar mapRef={mapRef} />
     </>
   );
 }
 
-function MapBtn({ title, icon }: { title: string; icon: string }) {
+function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> }) {
+  const [satellite, setSatellite] = useState(!!config.maptilerApiKey);
+  const [locating, setLocating] = useState(false);
+
+  function toggleLayers() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (satellite) {
+      // Switch to OSM
+      map.setStyle(OSM_STYLE);
+      map.once("style.load", () => addAppLayers(map));
+      setSatellite(false);
+    } else {
+      // Switch to MapTiler satellite
+      if (!config.maptilerApiKey) return;
+      fetch(MAPTILER_STYLE(config.maptilerApiKey))
+        .then((r) => r.json())
+        .then((style) => {
+          map.setStyle(style);
+          map.once("style.load", () => addAppLayers(map));
+          setSatellite(true);
+        })
+        .catch(() => {});
+    }
+  }
+
+  function geolocate() {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        mapRef.current?.flyTo({
+          center: [pos.coords.longitude, pos.coords.latitude],
+          zoom: 15,
+          duration: 800,
+        });
+        setLocating(false);
+      },
+      () => setLocating(false),
+      { timeout: 8000 },
+    );
+  }
+
   return (
-    <button
-      type="button"
-      title={title}
-      className="w-10 h-10 rounded-xl bg-[#1a1a2e]/95 border border-slate-700 hover:bg-slate-700 text-slate-300 flex items-center justify-center shadow-lg"
-    >
-      {icon}
-    </button>
+    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+      <button
+        type="button"
+        title={satellite ? "Mudar para mapa" : "Mudar para satélite"}
+        onClick={toggleLayers}
+        className={`w-10 h-10 rounded-xl border flex items-center justify-center shadow-lg text-base transition ${
+          satellite
+            ? "bg-brand-500/90 border-brand-600 text-slate-950"
+            : "bg-[#1a1a2e]/95 border-slate-700 text-slate-300 hover:bg-slate-700"
+        }`}
+      >
+        {satellite ? "🛰️" : "🗺️"}
+      </button>
+      <button
+        type="button"
+        title="A minha localização"
+        onClick={geolocate}
+        disabled={locating}
+        className="w-10 h-10 rounded-xl bg-[#1a1a2e]/95 border border-slate-700 hover:bg-slate-700 text-slate-300 flex items-center justify-center shadow-lg text-base disabled:opacity-50"
+      >
+        {locating ? "⌛" : "◎"}
+      </button>
+    </div>
   );
 }
 

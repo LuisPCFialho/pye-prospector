@@ -20,7 +20,8 @@ const MIRRORS = [
   "https://overpass.openstreetmap.ru/api/interpreter",
 ];
 
-const CI_FILTER = `["building"~"^(industrial|warehouse|commercial|retail|factory|manufacture|supermarket|hangar|office|public|hospital|school|university|shop|service|storage|detached|semidetached_house)$"]`;
+// All buildings — area filter (≥300 m²) applied client-side to exclude small sheds/houses
+const CI_FILTER = `["building"]`;
 
 function buildQuery(bbox: BBox): string {
   const { minLat, minLon, maxLat, maxLon } = bbox;
