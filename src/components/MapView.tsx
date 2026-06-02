@@ -127,12 +127,38 @@ export default function MapView() {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    // Restore last view from localStorage
+    let initialCenter: [number, number] = [config.defaultCenter.lon, config.defaultCenter.lat];
+    let initialZoom = config.defaultZoom;
+    try {
+      const saved = localStorage.getItem("pye:mapview");
+      if (saved) {
+        const v = JSON.parse(saved) as { lon: number; lat: number; zoom: number };
+        if (Number.isFinite(v.lon) && Number.isFinite(v.lat) && Number.isFinite(v.zoom)) {
+          initialCenter = [v.lon, v.lat];
+          initialZoom = v.zoom;
+        }
+      }
+    } catch { /* ignore */ }
+
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: OSM_STYLE,
-      center: [config.defaultCenter.lon, config.defaultCenter.lat],
-      zoom: config.defaultZoom,
+      center: initialCenter,
+      zoom: initialZoom,
       attributionControl: false,
+    });
+
+    // Persist view changes (debounced)
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
+    map.on("moveend", () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        const c = map.getCenter();
+        try {
+          localStorage.setItem("pye:mapview", JSON.stringify({ lon: c.lng, lat: c.lat, zoom: map.getZoom() }));
+        } catch { /* quota */ }
+      }, 500);
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");

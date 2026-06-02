@@ -3,7 +3,7 @@ import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
-import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone } from "../lib/leadAutoFill";
+import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
 
 type Tab = "flag" | "solar" | "drop";
 
@@ -146,6 +146,14 @@ export default function LocationSummary() {
               value={kwp.toFixed(1)}
               accent
             />
+
+            {/* Existing PV detection badge */}
+            {hasSolarOnOSM(building) && (
+              <div className="flex items-center gap-1.5 text-[11px] text-green-400 bg-green-900/20 border border-green-700/40 rounded px-2 py-1">
+                <span>☀️</span>
+                <span>PV detetado no OSM — edifício já tem painéis</span>
+              </div>
+            )}
 
             <div className="border-t border-[#1e1f30] my-1" />
 
