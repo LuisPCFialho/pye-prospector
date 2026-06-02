@@ -5,6 +5,7 @@ import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
 import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
 import { openExternal, streetViewUrl, googleMapsUrl } from "../lib/openExternal";
+import { findNearbyBusinesses, type NearbyBusiness } from "../lib/companyLookup";
 
 type Tab = "flag" | "solar" | "drop";
 
@@ -18,10 +19,12 @@ export default function LocationSummary() {
   const setShowDropDialog   = useAppStore((s) => s.setShowDropDialog);
   const upsertLead          = useAppStore((s) => s.upsertLead);
 
-  const [tab, setTab]             = useState<Tab>("flag");
-  const [calcingSolar, setCalcing] = useState(false);
-  const [editingField, setEditing] = useState<string | null>(null);
-  const [editValue, setEditValue]  = useState("");
+  const [tab, setTab]                     = useState<Tab>("flag");
+  const [calcingSolar, setCalcing]         = useState(false);
+  const [editingField, setEditing]         = useState<string | null>(null);
+  const [editValue, setEditValue]          = useState("");
+  const [nearbySuggestions, setSuggestions] = useState<NearbyBusiness[]>([]);
+  const [loadingSuggestions, setLoadingSug] = useState(false);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
@@ -50,6 +53,19 @@ export default function LocationSummary() {
       saveLead(filled).catch(() => {});
       upsertLead(filled);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [building?.id]);
+
+  // Search Overpass POIs near building when company is still unknown
+  useEffect(() => {
+    if (!building) { setSuggestions([]); return; }
+    const currentCompany = getDisplayCompany(building, lead);
+    if (currentCompany !== "(sem nome — verificar)") { setSuggestions([]); return; }
+    setLoadingSug(true);
+    setSuggestions([]);
+    findNearbyBusinesses(building.centroidLat, building.centroidLon)
+      .then((list) => { setSuggestions(list.slice(0, 5)); setLoadingSug(false); })
+      .catch(() => setLoadingSug(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [building?.id]);
 
@@ -182,6 +198,36 @@ export default function LocationSummary() {
               onSave={() => saveField("company", editValue)}
               onCancel={() => setEditing(null)}
             />
+
+            {/* Nearby business suggestions from Overpass POI search */}
+            {loadingSuggestions && (
+              <div className="text-[10px] text-[#8892a4] animate-pulse">A procurar empresas próximas…</div>
+            )}
+            {nearbySuggestions.length > 0 && (
+              <div>
+                <div className="text-[10px] text-[#8892a4] uppercase tracking-wide mb-1">Sugestões OSM ({nearbySuggestions[0].distance}m)</div>
+                <div className="flex flex-wrap gap-1">
+                  {nearbySuggestions.map((b) => (
+                    <button
+                      key={b.name}
+                      type="button"
+                      title={`${b.amenity ?? b.shop ?? b.office ?? b.industrial ?? ""} · ${b.distance}m`}
+                      onClick={async () => {
+                        await saveField("company", b.name);
+                        if (b.website) await saveField("website", b.website);
+                        if (b.phone) await saveField("telephone", b.phone);
+                        if (b.email) await saveField("email", b.email);
+                        if (b.nif) await saveField("nif", b.nif);
+                        setSuggestions([]);
+                      }}
+                      className="px-2 py-0.5 bg-[#1e1f30] hover:bg-[#f97316]/15 hover:text-[#f97316] border border-[#2a2b3d] hover:border-[#f97316]/30 rounded text-[10px] text-[#c8d0df] transition-all"
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Website */}
             <EditableFieldRow
