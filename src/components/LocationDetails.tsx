@@ -2,12 +2,10 @@ import { useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead, duplicateLead, getAllLeads } from "../db/database";
-import { scoreLead } from "../lib/scoring";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
-import ScoringBadge from "./ScoringBadge";
 
-type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "ai";
+type Tab = "flag" | "solar" | "individual" | "notes" | "metadata";
 
 export default function LocationDetails() {
   const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
@@ -15,7 +13,6 @@ export default function LocationDetails() {
   const leads = useAppStore((s) => s.leads);
   const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
   const setShowStreetView = useAppStore((s) => s.setShowStreetView);
-  const setShowAIAssistant = useAppStore((s) => s.setShowAIAssistant);
   const upsertLead = useAppStore((s) => s.upsertLead);
   const setLeads = useAppStore((s) => s.setLeads);
 
@@ -55,7 +52,6 @@ export default function LocationDetails() {
         estimatedKwhPerYear: result.yearlyEnergyKwh,
         estimatedKwp: kwp,
         monthlyKwh: result.monthlyAverageKwh,
-        estimatedValueEur: Math.round(result.yearlyEnergyKwh * 0.16 * 8), // 8-year savings
         updatedAt: new Date().toISOString(),
       };
       try { await saveLead(updated); } catch {}
@@ -88,15 +84,13 @@ export default function LocationDetails() {
 
   const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);
   const density = building.areaSqm > 0 ? kwp / building.areaSqm : 0;
-  const { score, explanations } = scoreLead(building, lead);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "flag", label: "🚩 Lead" },
     { key: "solar", label: "☀️ Solar" },
     { key: "individual", label: "🏢 Empresa" },
-    { key: "notes", label: "📝 Notas & Tarefas" },
+    { key: "notes", label: "📝 Notas" },
     { key: "metadata", label: "🔍 OSM" },
-    { key: "ai", label: "🤖 AI" },
   ];
 
   return (
@@ -105,7 +99,6 @@ export default function LocationDetails() {
         <div className="flex items-center justify-between px-5 py-3 bg-[#12121e] border-b border-slate-700 shrink-0">
           <div className="flex items-center gap-3">
             <span className="font-semibold">Location Details</span>
-            <ScoringBadge score={score} size="sm" />
           </div>
           <div className="flex items-center gap-2">
             {lead && (
@@ -146,9 +139,6 @@ export default function LocationDetails() {
         <div className="overflow-y-auto flex-1 p-5">
           {tab === "flag" && (
             <div className="space-y-4">
-              <div className="bg-[#12121e] rounded-lg p-3 border border-slate-700/50">
-                <ScoringBadge score={score} explanations={explanations} size="lg" showExplanations />
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <ROField label="Tipo" value={`Rooftop · ${building.buildingTag ?? "—"}`} />
                 <ROField label="Área" value={`${building.areaSqm.toLocaleString("pt-PT")} m²`} />
@@ -179,8 +169,6 @@ export default function LocationDetails() {
                   ]}
                   onChange={(v) => handleField("pipelineStage", v)}
                 />
-                <EditField label="Valor Estimado (€)" type="number" value={lead?.estimatedValueEur ?? ""} onChange={(v) => handleField("estimatedValueEur", v === "" ? undefined : Number(v))} />
-                <EditField label="Probabilidade (%)" type="number" value={lead?.probability ?? ""} onChange={(v) => handleField("probability", v === "" ? undefined : Number(v))} />
                 <div className="col-span-2 text-[10px] text-slate-500">
                   Criado: {lead?.createdAt ? new Date(lead.createdAt).toLocaleDateString("pt-PT") : "—"} ·
                   Atualizado: {lead?.updatedAt ? new Date(lead.updatedAt).toLocaleDateString("pt-PT") : "—"}
@@ -222,7 +210,6 @@ export default function LocationDetails() {
             <div className="grid grid-cols-2 gap-4">
               <EditField label="Empresa" value={lead?.company ?? ""} onChange={(v) => handleField("company", v)} />
               <EditField label="NIF" value={lead?.nif ?? ""} onChange={(v) => handleField("nif", v)} />
-              <EditField label="CAE" value={lead?.cae ?? ""} onChange={(v) => handleField("cae", v)} />
               <SelectField
                 label="Setor"
                 value={lead?.buildingUse ?? "other"}
@@ -303,20 +290,6 @@ export default function LocationDetails() {
             </div>
           )}
 
-          {tab === "ai" && (
-            <div className="text-center py-8 space-y-3">
-              <p className="text-sm text-slate-300">
-                Usa o AI Assistant para gerar resumo executivo, email de outreach ou script de chamada para este lead.
-              </p>
-              <button
-                type="button"
-                onClick={() => { setShowLocationDetails(false); setShowAIAssistant(true); }}
-                className="px-6 py-2 rounded bg-brand-500 hover:bg-brand-400 text-slate-950 text-sm font-semibold"
-              >
-                🤖 Abrir AI Assistant
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

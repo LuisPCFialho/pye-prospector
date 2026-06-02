@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
+import { Layers, Maximize2 } from "lucide-react";
 import { config } from "../config";
 import { setMapInstance } from "../lib/mapInstance";
 import { useAppStore } from "../store/appStore";
@@ -8,7 +9,6 @@ import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
 import * as turf from "@turf/turf";
 
-// OSM raster — always works, no key needed
 const OSM_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
@@ -31,35 +31,62 @@ const BUILDINGS_SOURCE = "buildings";
 const DRAW_SOURCE = "draw-polygon";
 
 function addAppLayers(map: maplibregl.Map) {
-  if (map.getSource(BUILDINGS_SOURCE)) return; // already added
+  if (map.getSource(BUILDINGS_SOURCE)) return;
 
-  // Seed with any buildings already in the store (handles style swap race condition)
-  const existingData = buildingsToGeoJSON(useAppStore.getState().buildings);
+  const existingData = buildingsToGeoJSON(
+    useAppStore.getState().buildings,
+    useAppStore.getState().leads,
+  );
 
   map.addSource(BUILDINGS_SOURCE, {
     type: "geojson",
     data: existingData,
     generateId: true,
   });
+
+  // Fill — color driven by feature property 'fillColor', cyan when selected
   map.addLayer({
     id: "buildings-fill",
     type: "fill",
     source: BUILDINGS_SOURCE,
     paint: {
-      "fill-color": ["case", ["boolean", ["feature-state", "selected"], false], "#00d4d4", "#ef4444"],
-      "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.45, 0.25],
+      "fill-color": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false],
+        "#06b6d4",
+        ["get", "fillColor"],
+      ],
+      "fill-opacity": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false],
+        0.40,
+        0.22,
+      ],
     },
   });
+
+  // Outline
   map.addLayer({
     id: "buildings-outline",
     type: "line",
     source: BUILDINGS_SOURCE,
     paint: {
-      "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#00d4d4", "#ef4444"],
-      "line-width": 1.5,
+      "line-color": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false],
+        "#06b6d4",
+        ["get", "fillColor"],
+      ],
+      "line-width": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false],
+        2,
+        1.5,
+      ],
     },
   });
 
+  // Draw polygon source
   map.addSource(DRAW_SOURCE, {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
@@ -68,7 +95,7 @@ function addAppLayers(map: maplibregl.Map) {
     id: "draw-fill",
     type: "fill",
     source: DRAW_SOURCE,
-    paint: { "fill-color": "#f97316", "fill-opacity": 0.15 },
+    paint: { "fill-color": "#f97316", "fill-opacity": 0.12 },
   });
   map.addLayer({
     id: "draw-line",
@@ -80,22 +107,23 @@ function addAppLayers(map: maplibregl.Map) {
 
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef       = useRef<maplibregl.Map | null>(null);
   const selectedIdRef = useRef<number | string | null>(null);
   const drawCoordsRef = useRef<[number, number][]>([]);
 
-  const buildings = useAppStore((s) => s.buildings);
-  const drawMode = useAppStore((s) => s.drawMode);
-  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
-  const loadError = useAppStore((s) => s.loadError);
-  const selectBuilding = useAppStore((s) => s.selectBuilding);
-  const addBuildings = useAppStore((s) => s.addBuildings);
-  const setLeads = useAppStore((s) => s.setLeads);
-  const setDrawMode = useAppStore((s) => s.setDrawMode);
+  const buildings           = useAppStore((s) => s.buildings);
+  const leads               = useAppStore((s) => s.leads);
+  const drawMode            = useAppStore((s) => s.drawMode);
+  const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
+  const loadError           = useAppStore((s) => s.loadError);
+  const selectBuilding      = useAppStore((s) => s.selectBuilding);
+  const addBuildings        = useAppStore((s) => s.addBuildings);
+  const setLeads            = useAppStore((s) => s.setLeads);
+  const setDrawMode         = useAppStore((s) => s.setDrawMode);
   const setLoadingBuildings = useAppStore((s) => s.setLoadingBuildings);
-  const setLoadError = useAppStore((s) => s.setLoadError);
+  const setLoadError        = useAppStore((s) => s.setLoadError);
 
-  // Init map — OSM first, then upgrade to MapTiler if key present
+  // Init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
@@ -108,41 +136,26 @@ export default function MapView() {
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
-    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
-    // Once OSM is loaded, add app layers (and optionally upgrade to satellite)
     map.on("load", () => {
       addAppLayers(map);
 
-      // Try to upgrade to MapTiler satellite
       if (config.maptilerApiKey) {
         fetch(MAPTILER_STYLE(config.maptilerApiKey))
-          .then((r) => {
-            if (!r.ok) throw new Error(`MapTiler ${r.status}`);
-            return r.json();
-          })
-          .then((style) => {
-            map.setStyle(style);
-            // Re-add app layers after style swap
-            map.once("style.load", () => addAppLayers(map));
-          })
-          .catch((e) => {
-            console.warn("MapTiler style unavailable, keeping OSM:", e.message);
-          });
+          .then((r) => { if (!r.ok) throw new Error(`MapTiler ${r.status}`); return r.json(); })
+          .then((style) => { map.setStyle(style); map.once("style.load", () => addAppLayers(map)); })
+          .catch(() => {});
       }
     });
 
     setMapInstance(map);
     mapRef.current = map;
 
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
+    return () => { map.remove(); mapRef.current = null; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Click: select building or add draw point
+  // Click handler
   const handleMapClick = useCallback(
     (e: maplibregl.MapMouseEvent) => {
       const map = mapRef.current;
@@ -176,7 +189,7 @@ export default function MapView() {
     [selectBuilding],
   );
 
-  // Double-click: finish polygon
+  // Double-click — finish polygon
   const handleDblClick = useCallback(
     async (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
@@ -185,15 +198,15 @@ export default function MapView() {
       const coords = drawCoordsRef.current;
       if (coords.length < 3) return;
       const closed = [...coords, coords[0]];
-      const poly = turf.polygon([closed]);
-      const bbox = turf.bbox(poly);
+      const poly   = turf.polygon([closed]);
+      const bbox   = turf.bbox(poly);
       clearDraw(map);
       setDrawMode("none");
       map.getCanvas().style.cursor = "";
       setLoadingBuildings(true);
       setLoadError(null);
       try {
-        const all = await fetchBuildingsInBBox({ minLon: bbox[0], minLat: bbox[1], maxLon: bbox[2], maxLat: bbox[3] });
+        const all    = await fetchBuildingsInBBox({ minLon: bbox[0], minLat: bbox[1], maxLon: bbox[2], maxLat: bbox[3] });
         const inside = all.filter((b) =>
           turf.booleanPointInPolygon(turf.point([b.centroidLon, b.centroidLat]), poly),
         );
@@ -209,6 +222,7 @@ export default function MapView() {
     [addBuildings, setLeads, setDrawMode, setLoadingBuildings, setLoadError],
   );
 
+  // ESC to cancel draw
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && mapRef.current) {
@@ -221,6 +235,7 @@ export default function MapView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setDrawMode]);
 
+  // Register click/dblclick
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -229,6 +244,7 @@ export default function MapView() {
     return () => { map.off("click", handleMapClick); map.off("dblclick", handleDblClick); };
   }, [handleMapClick, handleDblClick]);
 
+  // Cursor in draw mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -236,22 +252,20 @@ export default function MapView() {
     if (drawMode === "none") { clearDraw(map); drawCoordsRef.current = []; }
   }, [drawMode]);
 
+  // Re-render buildings when buildings OR leads change (color depends on leads)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const geojson = buildingsToGeoJSON(buildings);
+    const geojson = buildingsToGeoJSON(buildings, leads);
     const apply = () => {
       const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
       if (src) src.setData(geojson);
     };
-    // If style is mid-load (e.g. MapTiler swap), defer until style.load fires
-    if (map.isStyleLoaded()) {
-      apply();
-    } else {
-      map.once("style.load", apply);
-    }
-  }, [buildings]);
+    if (map.isStyleLoaded()) apply();
+    else map.once("style.load", apply);
+  }, [buildings, leads]);
 
+  // Pan to selected
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedBuildingId) return;
@@ -261,20 +275,19 @@ export default function MapView() {
 
   return (
     <>
-      {/* Wrapper keeps absolute positioning — MapLibre overrides position:relative on the inner div */}
       <div className="map-container">
         <div ref={containerRef} className="map-inner" />
       </div>
 
       {loadError && (
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 bg-red-900/95 border border-red-700 text-red-100 text-xs px-4 py-2.5 rounded-lg shadow-xl max-w-md text-center">
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 bg-red-900/95 border border-red-700 text-red-100 text-xs px-4 py-2.5 rounded-lg shadow-xl max-w-md text-center">
           ⚠️ {loadError}
         </div>
       )}
 
       {drawMode === "polygon" && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-brand-500/95 text-slate-950 text-xs font-semibold px-5 py-2 rounded-full shadow-lg pointer-events-none">
-          ✏️ Clica para pontos · Duplo-clique para finalizar · ESC cancela
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-[#f97316]/95 text-white text-xs font-semibold px-5 py-2 rounded-full shadow-lg pointer-events-none">
+          Click to add points · Double-click to finish · ESC to cancel
         </div>
       )}
 
@@ -285,18 +298,16 @@ export default function MapView() {
 
 function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> }) {
   const [satellite, setSatellite] = useState(!!config.maptilerApiKey);
-  const [locating, setLocating] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   function toggleLayers() {
     const map = mapRef.current;
     if (!map) return;
     if (satellite) {
-      // Switch to OSM
       map.setStyle(OSM_STYLE);
       map.once("style.load", () => addAppLayers(map));
       setSatellite(false);
     } else {
-      // Switch to MapTiler satellite
       if (!config.maptilerApiKey) return;
       fetch(MAPTILER_STYLE(config.maptilerApiKey))
         .then((r) => r.json())
@@ -309,45 +320,33 @@ function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> })
     }
   }
 
-  function geolocate() {
-    if (!navigator.geolocation) return;
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        mapRef.current?.flyTo({
-          center: [pos.coords.longitude, pos.coords.latitude],
-          zoom: 15,
-          duration: 800,
-        });
-        setLocating(false);
-      },
-      () => setLocating(false),
-      { timeout: 8000 },
-    );
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setFullscreen(false);
+    }
   }
 
   return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+    <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex gap-2">
       <button
         type="button"
-        title={satellite ? "Mudar para mapa" : "Mudar para satélite"}
+        title={satellite ? "Mapa de ruas" : "Vista satélite"}
         onClick={toggleLayers}
-        className={`w-10 h-10 rounded-xl border flex items-center justify-center shadow-lg text-base transition ${
-          satellite
-            ? "bg-brand-500/90 border-brand-600 text-slate-950"
-            : "bg-[#1a1a2e]/95 border-slate-700 text-slate-300 hover:bg-slate-700"
-        }`}
+        className="w-10 h-10 rounded-xl bg-[#13131f]/95 border border-[#1e1f30] hover:bg-[#1e1f30] text-[#c8d0df] flex items-center justify-center shadow-lg transition-colors"
       >
-        {satellite ? "🛰️" : "🗺️"}
+        <Layers size={16} />
       </button>
       <button
         type="button"
-        title="A minha localização"
-        onClick={geolocate}
-        disabled={locating}
-        className="w-10 h-10 rounded-xl bg-[#1a1a2e]/95 border border-slate-700 hover:bg-slate-700 text-slate-300 flex items-center justify-center shadow-lg text-base disabled:opacity-50"
+        title={fullscreen ? "Sair de fullscreen" : "Fullscreen"}
+        onClick={toggleFullscreen}
+        className="w-10 h-10 rounded-xl bg-[#13131f]/95 border border-[#1e1f30] hover:bg-[#1e1f30] text-[#c8d0df] flex items-center justify-center shadow-lg transition-colors"
       >
-        {locating ? "⌛" : "◎"}
+        <Maximize2 size={16} />
       </button>
     </div>
   );
@@ -362,7 +361,10 @@ function updateDrawLayer(map: maplibregl.Map, coords: [number, number][]) {
     type: "FeatureCollection",
     features: [{
       type: "Feature",
-      geometry: { type: coords.length >= 3 ? "Polygon" : "LineString", coordinates: coords.length >= 3 ? [ring] : coords },
+      geometry: {
+        type: coords.length >= 3 ? "Polygon" : "LineString",
+        coordinates: coords.length >= 3 ? [ring] : coords,
+      },
       properties: {},
     } as GeoJSON.Feature],
   });

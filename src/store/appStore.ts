@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import type {
-  BuildingFeature, Lead, LeadNote, LeadTask,
+  BuildingFeature, Lead, LeadNote,
   SolarStatus, PipelineStage,
 } from "../types/building";
 
-export type ViewMode = "map" | "table" | "analytics" | "kanban";
+export type ViewMode = "map" | "table";
 export type DrawMode = "none" | "polygon";
 
 interface AppState {
@@ -12,18 +12,21 @@ interface AppState {
   drawMode: DrawMode;
 
   buildings: BuildingFeature[];
-  leads: Record<string, Lead>;             // keyed by buildingId
-  notes: Record<string, LeadNote[]>;       // keyed by leadId
-  tasks: Record<string, LeadTask[]>;       // keyed by leadId
+  leads: Record<string, Lead>;
+  notes: Record<string, LeadNote[]>;
 
   selectedBuildingId: string | null;
+
+  // Multi-selection
+  selectionIds: string[];
+  selectionCursor: number;
 
   showLocationSummary: boolean;
   showLocationDetails: boolean;
   showStreetView: boolean;
   showSearchFilter: boolean;
-  showAIAssistant: boolean;
-  showQuickJump: boolean;
+  showDropDialog: boolean;
+  showLayersPanel: boolean;
 
   isLoadingBuildings: boolean;
   loadError: string | null;
@@ -32,7 +35,11 @@ interface AppState {
   filterSolarStatus: SolarStatus | "all";
   filterPipelineStage: PipelineStage | "all";
   filterMinAreaSqm: number;
-  filterMinScore: number;
+  filterMaxAreaSqm: number;
+  filterKeyword: string;
+  filterOnlyFlagged: boolean;
+  filterOnlyDropped: boolean;
+  filterExcludeDropped: boolean;
 
   // actions
   setViewMode: (v: ViewMode) => void;
@@ -47,17 +54,15 @@ interface AppState {
   setNotes: (notes: Record<string, LeadNote[]>) => void;
   addNoteToStore: (note: LeadNote) => void;
 
-  setTasks: (tasks: Record<string, LeadTask[]>) => void;
-  addTaskToStore: (task: LeadTask) => void;
-  updateTaskInStore: (task: LeadTask) => void;
-
   selectBuilding: (id: string | null) => void;
+  setSelectionIds: (ids: string[]) => void;
+  setSelectionCursor: (n: number) => void;
 
   setShowLocationDetails: (v: boolean) => void;
   setShowStreetView: (v: boolean) => void;
   setShowSearchFilter: (v: boolean) => void;
-  setShowAIAssistant: (v: boolean) => void;
-  setShowQuickJump: (v: boolean) => void;
+  setShowDropDialog: (v: boolean) => void;
+  setShowLayersPanel: (v: boolean) => void;
 
   setLoadingBuildings: (v: boolean) => void;
   setLoadError: (e: string | null) => void;
@@ -66,7 +71,11 @@ interface AppState {
   setFilterSolarStatus: (v: SolarStatus | "all") => void;
   setFilterPipelineStage: (v: PipelineStage | "all") => void;
   setFilterMinAreaSqm: (v: number) => void;
-  setFilterMinScore: (v: number) => void;
+  setFilterMaxAreaSqm: (v: number) => void;
+  setFilterKeyword: (v: string) => void;
+  setFilterOnlyFlagged: (v: boolean) => void;
+  setFilterOnlyDropped: (v: boolean) => void;
+  setFilterExcludeDropped: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -76,16 +85,17 @@ export const useAppStore = create<AppState>((set) => ({
   buildings: [],
   leads: {},
   notes: {},
-  tasks: {},
 
   selectedBuildingId: null,
+  selectionIds: [],
+  selectionCursor: 0,
 
   showLocationSummary: false,
   showLocationDetails: false,
   showStreetView: false,
   showSearchFilter: false,
-  showAIAssistant: false,
-  showQuickJump: false,
+  showDropDialog: false,
+  showLayersPanel: false,
 
   isLoadingBuildings: false,
   loadError: null,
@@ -94,7 +104,11 @@ export const useAppStore = create<AppState>((set) => ({
   filterSolarStatus: "all",
   filterPipelineStage: "all",
   filterMinAreaSqm: 0,
-  filterMinScore: 0,
+  filterMaxAreaSqm: 0,
+  filterKeyword: "",
+  filterOnlyFlagged: false,
+  filterOnlyDropped: false,
+  filterExcludeDropped: false,
 
   setViewMode: (v) => set({ viewMode: v }),
   setDrawMode: (d) => set({ drawMode: d }),
@@ -117,27 +131,17 @@ export const useAppStore = create<AppState>((set) => ({
       notes: { ...s.notes, [note.leadId]: [note, ...(s.notes[note.leadId] ?? [])] },
     })),
 
-  setTasks: (tasks) => set({ tasks }),
-  addTaskToStore: (task) =>
-    set((s) => ({
-      tasks: { ...s.tasks, [task.leadId]: [task, ...(s.tasks[task.leadId] ?? [])] },
-    })),
-  updateTaskInStore: (task) =>
-    set((s) => ({
-      tasks: {
-        ...s.tasks,
-        [task.leadId]: (s.tasks[task.leadId] ?? []).map((t) => (t.id === task.id ? task : t)),
-      },
-    })),
-
   selectBuilding: (id) =>
     set({ selectedBuildingId: id, showLocationSummary: id !== null }),
+
+  setSelectionIds: (ids) => set({ selectionIds: ids, selectionCursor: 0 }),
+  setSelectionCursor: (n) => set({ selectionCursor: n }),
 
   setShowLocationDetails: (v) => set({ showLocationDetails: v }),
   setShowStreetView: (v) => set({ showStreetView: v }),
   setShowSearchFilter: (v) => set({ showSearchFilter: v }),
-  setShowAIAssistant: (v) => set({ showAIAssistant: v }),
-  setShowQuickJump: (v) => set({ showQuickJump: v }),
+  setShowDropDialog: (v) => set({ showDropDialog: v }),
+  setShowLayersPanel: (v) => set({ showLayersPanel: v }),
 
   setLoadingBuildings: (v) => set({ isLoadingBuildings: v }),
   setLoadError: (e) => set({ loadError: e }),
@@ -146,5 +150,9 @@ export const useAppStore = create<AppState>((set) => ({
   setFilterSolarStatus: (v) => set({ filterSolarStatus: v }),
   setFilterPipelineStage: (v) => set({ filterPipelineStage: v }),
   setFilterMinAreaSqm: (v) => set({ filterMinAreaSqm: v }),
-  setFilterMinScore: (v) => set({ filterMinScore: v }),
+  setFilterMaxAreaSqm: (v) => set({ filterMaxAreaSqm: v }),
+  setFilterKeyword: (v) => set({ filterKeyword: v }),
+  setFilterOnlyFlagged: (v) => set({ filterOnlyFlagged: v }),
+  setFilterOnlyDropped: (v) => set({ filterOnlyDropped: v }),
+  setFilterExcludeDropped: (v) => set({ filterExcludeDropped: v }),
 }));

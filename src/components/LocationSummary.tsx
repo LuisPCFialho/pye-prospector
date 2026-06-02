@@ -1,309 +1,362 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
-import { scoreLead } from "../lib/scoring";
-import ScoringBadge from "./ScoringBadge";
 
-type Tab = "flag" | "solar" | "individual";
-
-const SOLAR_STATUS_OPTS = [
-  { value: "unknown", label: "Desconhecido" },
-  { value: "no_panels", label: "Sem painéis" },
-  { value: "has_panels", label: "Com painéis" },
-  { value: "partial", label: "Parcial" },
-  { value: "inconclusive", label: "Inconclusivo" },
-] as const;
-
-const PIPELINE_OPTS = [
-  { value: "to_contact", label: "Por contactar" },
-  { value: "contacted", label: "Contactado" },
-  { value: "meeting", label: "Reunião" },
-  { value: "proposal", label: "Proposta" },
-  { value: "won", label: "Ganho" },
-  { value: "lost", label: "Perdido" },
-] as const;
+type Tab = "flag" | "solar" | "drop";
 
 export default function LocationSummary() {
-  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
-  const buildings = useAppStore((s) => s.buildings);
-  const leads = useAppStore((s) => s.leads);
+  const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
+  const buildings           = useAppStore((s) => s.buildings);
+  const leads               = useAppStore((s) => s.leads);
   const showLocationSummary = useAppStore((s) => s.showLocationSummary);
-  const selectBuilding = useAppStore((s) => s.selectBuilding);
+  const selectBuilding      = useAppStore((s) => s.selectBuilding);
   const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
-  const setShowStreetView = useAppStore((s) => s.setShowStreetView);
-  const upsertLead = useAppStore((s) => s.upsertLead);
+  const setShowStreetView   = useAppStore((s) => s.setShowStreetView);
+  const setShowDropDialog   = useAppStore((s) => s.setShowDropDialog);
+  const upsertLead          = useAppStore((s) => s.upsertLead);
 
-  const setShowAIAssistant = useAppStore((s) => s.setShowAIAssistant);
-  const [tab, setTab] = useState<Tab>("flag");
-  const [calcingSolar, setCalcingSolar] = useState(false);
+  const [tab, setTab]             = useState<Tab>("flag");
+  const [calcingSolar, setCalcing] = useState(false);
+  const [editingField, setEditing] = useState<string | null>(null);
+  const [editValue, setEditValue]  = useState("");
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
-  const lead = selectedBuildingId ? leads[selectedBuildingId] : undefined;
-
-  // Auto-score: refresh whenever building or lead changes
-  useEffect(() => {
-    if (!building) return;
-    const { score, explanations } = scoreLead(building, lead);
-    if (lead && (lead.score !== score || JSON.stringify(lead.scoreExplanations) !== JSON.stringify(explanations))) {
-      const updated = { ...lead, score, scoreExplanations: explanations, updatedAt: new Date().toISOString() };
-      saveLead(updated).catch(() => {});
-      upsertLead(updated);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [building?.id, lead?.solarStatus, lead?.pipelineStage, lead?.estimatedKwp, lead?.company, lead?.cae]);
+  const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
 
   if (!showLocationSummary || !building) return null;
 
-  // Compute current score (using updated lead from store)
-  const { score, explanations } = scoreLead(building, lead);
+  const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);
+
+  function ensureLead() {
+    return lead ?? {
+      id: crypto.randomUUID(),
+      buildingId: building!.id,
+      solarStatus: "unknown" as const,
+      pipelineStage: "to_contact" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async function saveField(field: string, value: string) {
+    const updated = { ...ensureLead(), [field]: value, updatedAt: new Date().toISOString() };
+    try { await saveLead(updated as Parameters<typeof saveLead>[0]); } catch { /* no tauri */ }
+    upsertLead(updated as Parameters<typeof saveLead>[0]);
+    setEditing(null);
+  }
 
   async function handleCalcSolar() {
     if (!building) return;
-    setCalcingSolar(true);
+    setCalcing(true);
     try {
-      const kwp = estimatePeakPower(building.areaSqm);
       const result = await fetchPVGIS({ lat: building.centroidLat, lon: building.centroidLon, peakPowerKwp: kwp });
       const updated = {
-        ...(lead ?? {
-          id: crypto.randomUUID(),
-          buildingId: building.id,
-          solarStatus: "unknown" as const,
-          pipelineStage: "to_contact" as const,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }),
+        ...ensureLead(),
         estimatedKwhPerYear: result.yearlyEnergyKwh,
         estimatedKwp: kwp,
         monthlyKwh: result.monthlyAverageKwh,
         updatedAt: new Date().toISOString(),
       };
-      await saveLead(updated);
+      try { await saveLead(updated); } catch { /* no tauri */ }
       upsertLead(updated);
     } finally {
-      setCalcingSolar(false);
+      setCalcing(false);
     }
   }
 
-  async function handleFieldChange(field: string, value: string) {
-    if (!building) return;
-    const updated = {
-      ...(lead ?? {
-        id: crypto.randomUUID(),
-        buildingId: building.id,
-        solarStatus: "unknown" as const,
-        pipelineStage: "to_contact" as const,
-        createdAt: new Date().toISOString(),
-      }),
-      [field]: value,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveLead(updated as typeof updated & { updatedAt: string });
-    upsertLead(updated as typeof updated & { updatedAt: string });
-  }
-
-  const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);
+  const locationName = building.name ?? building.operator ?? lead?.address ?? `Way ${building.osmId ?? building.id.slice(0, 8)}`;
+  const addedDate    = lead?.createdAt ? new Date(lead.createdAt).toLocaleDateString("pt-PT") : "Hoje";
+  const updatedDate  = lead?.updatedAt ? new Date(lead.updatedAt).toLocaleDateString("pt-PT") : "Hoje";
 
   return (
-    <div className="absolute top-4 right-4 z-20 w-80 bg-[#1a1a2e] border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+    <div className="absolute top-4 right-4 z-20 w-[300px] bg-[#13131f] border border-[#1e1f30] rounded-xl shadow-2xl overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#12121e] border-b border-slate-700">
-        <span className="text-sm font-semibold">Location Summary</span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowLocationDetails(true)}
-            className="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-xs"
-            title="Expandir"
-          >
-            ⤢
-          </button>
-          <button
-            onClick={() => selectBuilding(null)}
-            className="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-xs"
-            title="Fechar"
-          >
-            ×
-          </button>
-        </div>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1f30]">
+        <span className="text-sm font-semibold text-white">Location Summary</span>
+        <button
+          onClick={() => selectBuilding(null)}
+          className="w-6 h-6 rounded flex items-center justify-center text-[#8892a4] hover:text-white hover:bg-[#1e1f30] transition-colors"
+        >
+          <X size={14} />
+        </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-700">
-        {(["flag", "solar", "individual"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2 text-xs font-medium capitalize transition ${
-              tab === t
-                ? "text-brand-400 border-b-2 border-brand-400"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {t === "flag" ? "🚩 Flag" : t === "solar" ? "☀️ Solar" : "👤 Individual"}
-          </button>
-        ))}
-      </div>
-
-      {/* Score banner */}
-      <div className="px-4 py-3 bg-[#12121e]/50 border-b border-slate-700">
-        <ScoringBadge score={score} explanations={explanations} size="md" showExplanations={false} />
+      {/* Tab buttons */}
+      <div className="flex gap-1 px-3 pt-2.5 pb-1">
+        <TabBtn label="🚩 Flag"  active={tab === "flag"}  onClick={() => setTab("flag")} />
+        <TabBtn label="☀️ Solar" active={tab === "solar"} onClick={() => setTab("solar")} />
+        <TabBtn label="🗑 Drop"  active={tab === "drop"}  onClick={() => { setTab("drop"); setShowDropDialog(true); }} />
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-3 text-sm">
+      <div className="px-4 py-3 space-y-3 overflow-y-auto flex-1">
         {tab === "flag" && (
           <>
-            <Field label="Tipo" value="Rooftop C&I" />
-            <Field label="Área" value={`m² ${building.areaSqm.toLocaleString("pt-PT")}`} />
-            <SelectField
-              label="Estado solar"
-              value={lead?.solarStatus ?? "unknown"}
-              opts={SOLAR_STATUS_OPTS}
-              onChange={(v) => handleFieldChange("solarStatus", v)}
+            {/* Type */}
+            <FieldRow
+              label="Location Type"
+              icon={<Info size={12} className="text-[#8892a4]" />}
+              value="Rooftop"
             />
-            <SelectField
-              label="Pipeline"
-              value={lead?.pipelineStage ?? "to_contact"}
-              opts={PIPELINE_OPTS}
-              onChange={(v) => handleFieldChange("pipelineStage", v)}
+
+            {/* Area */}
+            <FieldRow
+              label="Area"
+              prefix="m²"
+              value={building.areaSqm.toLocaleString("pt-PT")}
             />
-            {building.name && <Field label="Nome" value={building.name} />}
-            {building.operator && <Field label="Operador" value={building.operator} />}
+
+            {/* Solar potential */}
+            <FieldRow
+              label="Solar Potential"
+              prefix="kWp"
+              value={kwp.toFixed(1)}
+              accent
+            />
+
+            <div className="border-t border-[#1e1f30] my-1" />
+
+            {/* Location Name */}
+            <EditableFieldRow
+              label="Location Name"
+              icon={<Building2 size={13} className="text-[#8892a4]" />}
+              value={locationName}
+              editing={editingField === "address"}
+              editValue={editValue}
+              onEdit={() => { setEditing("address"); setEditValue(locationName); }}
+              onChange={setEditValue}
+              onSave={() => saveField("address", editValue)}
+              onCancel={() => setEditing(null)}
+            />
+
+            {/* Company Name */}
+            <EditableFieldRow
+              label="Company Name"
+              icon={<Building2 size={13} className="text-[#8892a4]" />}
+              value={lead?.company ?? "—"}
+              editing={editingField === "company"}
+              editValue={editValue}
+              onEdit={() => { setEditing("company"); setEditValue(lead?.company ?? ""); }}
+              onChange={setEditValue}
+              onSave={() => saveField("company", editValue)}
+              onCancel={() => setEditing(null)}
+            />
+
+            {/* Website */}
+            <EditableFieldRow
+              label="Website"
+              icon={<Globe size={13} className="text-[#8892a4]" />}
+              value={lead?.website ?? "—"}
+              editing={editingField === "website"}
+              editValue={editValue}
+              onEdit={() => { setEditing("website"); setEditValue(lead?.website ?? ""); }}
+              onChange={setEditValue}
+              onSave={() => saveField("website", editValue)}
+              onCancel={() => setEditing(null)}
+            />
+
+            {/* Telephone */}
+            {lead?.telephone && (
+              <EditableFieldRow
+                label="Telephone"
+                icon={<Phone size={13} className="text-[#8892a4]" />}
+                value={lead.telephone}
+                editing={editingField === "telephone"}
+                editValue={editValue}
+                onEdit={() => { setEditing("telephone"); setEditValue(lead.telephone ?? ""); }}
+                onChange={setEditValue}
+                onSave={() => saveField("telephone", editValue)}
+                onCancel={() => setEditing(null)}
+              />
+            )}
+
+            {/* Get Metadata row */}
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={async () => {
+                  if (lead?.company) {
+                    window.open(`https://www.google.com/search?q=${encodeURIComponent(lead.company + " contactos Portugal")}`, "_blank");
+                  }
+                }}
+                className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors"
+              >
+                Get Metadata
+              </button>
+              {lead?.website && (
+                <a
+                  href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
+                >
+                  <Link2 size={13} />
+                </a>
+              )}
+              {building.osmId && (
+                <a
+                  href={`https://www.openstreetmap.org/way/${building.osmId}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
+                >
+                  <ExternalLink size={13} />
+                </a>
+              )}
+              <button
+                onClick={handleCalcSolar}
+                disabled={calcingSolar}
+                className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors disabled:opacity-40"
+                title="Recalcular solar"
+              >
+                <RefreshCw size={13} className={calcingSolar ? "animate-spin" : ""} />
+              </button>
+            </div>
           </>
         )}
 
         {tab === "solar" && (
           <>
-            <Field label="Área" value={`m² ${building.areaSqm.toLocaleString("pt-PT")}`} />
-            <Field
-              label="Potencial solar"
-              value={`kWp ${kwp.toFixed(1)}`}
-              accent
-            />
+            <FieldRow label="Area" prefix="m²" value={building.areaSqm.toLocaleString("pt-PT")} />
+            <FieldRow label="Solar Potential" prefix="kWp" value={kwp.toFixed(1)} accent />
             {lead?.estimatedKwhPerYear ? (
-              <Field
-                label="Geração anual"
-                value={`${(lead.estimatedKwhPerYear / 1000).toFixed(1)} MWh/ano`}
-                accent
-              />
+              <>
+                <FieldRow
+                  label="Annual Estimated Solar"
+                  prefix="MWh/year"
+                  value={(lead.estimatedKwhPerYear / 1000).toFixed(1)}
+                  accent
+                />
+                <FieldRow
+                  label="Solar Density Ratio"
+                  prefix="kWp/m²"
+                  value={(kwp / building.areaSqm).toFixed(3)}
+                />
+              </>
             ) : (
               <button
                 onClick={handleCalcSolar}
                 disabled={calcingSolar}
-                className="w-full py-1.5 rounded bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-slate-950 text-xs font-semibold"
+                className="w-full h-8 bg-[#f97316] hover:bg-[#ea6d0e] disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-2"
               >
-                {calcingSolar ? "A calcular…" : "☀️ Calcular PVGIS"}
+                <Zap size={13} />
+                {calcingSolar ? "A calcular…" : "Calculate Solar (PVGIS)"}
               </button>
             )}
           </>
         )}
 
-        {tab === "individual" && (
-          <>
-            <EditableField
-              label="Empresa"
-              value={lead?.company ?? ""}
-              onChange={(v) => handleFieldChange("company", v)}
-            />
-            <EditableField
-              label="Telefone"
-              value={lead?.telephone ?? ""}
-              onChange={(v) => handleFieldChange("telephone", v)}
-            />
-            <EditableField
-              label="Website"
-              value={lead?.website ?? ""}
-              onChange={(v) => handleFieldChange("website", v)}
-            />
-          </>
+        {tab === "drop" && (
+          <div className="text-xs text-[#8892a4] py-2 text-center">
+            Selecciona um motivo de exclusão
+          </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="px-4 pb-3 flex gap-2 flex-wrap">
+      <div className="px-4 pb-3 pt-1 border-t border-[#1e1f30] space-y-1">
         <button
-          type="button"
           onClick={() => setShowLocationDetails(true)}
-          className="flex-1 h-7 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+          className="w-full flex items-center justify-between text-[12px] text-[#8892a4] hover:text-white py-1 transition-colors"
         >
-          Detalhes
+          <span>More Location Details</span>
+          <ChevronRight size={14} />
         </button>
         <button
-          type="button"
-          onClick={() => setShowStreetView(true)}
-          className="flex-1 h-7 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+          onClick={() => { setShowLocationDetails(false); setShowStreetView(true); }}
+          className="w-full flex items-center justify-between text-[12px] text-[#8892a4] hover:text-white py-1 transition-colors"
         >
-          Street View
+          <span>Street View</span>
+          <ExternalLink size={12} />
         </button>
-        <button
-          type="button"
-          onClick={() => setShowAIAssistant(true)}
-          className="flex-1 h-7 rounded bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 text-xs"
-        >
-          🤖 AI
-        </button>
-        {building.osmId && (
-          <a
-            href={`https://www.openstreetmap.org/way/${building.osmId}`}
-            target="_blank" rel="noopener noreferrer"
-            className="h-7 w-7 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-xs"
-            title="Abrir no OSM"
-          >
-            ↗
-          </a>
-        )}
+        <div className="text-[10px] text-[#4a5160] pt-1">
+          Added: {addedDate} · Last change: {updatedDate}
+        </div>
       </div>
     </div>
   );
 }
 
-function Field({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <div>
-      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">{label}</div>
-      <div className={`text-sm font-medium ${accent ? "text-brand-400" : "text-slate-100"}`}>
-        {value}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 py-1.5 text-[11px] font-medium rounded-md transition-all ${
+        active
+          ? "bg-[#f97316]/15 text-[#f97316] border border-[#f97316]/25"
+          : "text-[#8892a4] hover:text-[#c8d0df] hover:bg-[#1e1f30]"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
-function EditableField({
-  label, value, onChange,
-}: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">{label}</div>
-      <input
-        className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
-function SelectField({
-  label, value, opts, onChange,
+function FieldRow({
+  label, prefix, value, accent, icon,
 }: {
   label: string;
+  prefix?: string;
   value: string;
-  opts: readonly { value: string; label: string }[];
-  onChange: (v: string) => void;
+  accent?: boolean;
+  icon?: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">{label}</div>
-      <select
-        className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {opts.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
+      <div className="flex items-center gap-1 text-[10px] text-[#4a5160] uppercase tracking-wide mb-0.5">
+        {icon}
+        {label}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        {prefix && <span className="text-[11px] text-[#8892a4]">{prefix}</span>}
+        <span className={`text-sm font-medium ${accent ? "text-[#f97316]" : "text-white"}`}>{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function EditableFieldRow({
+  label, icon, value, editing, editValue,
+  onEdit, onChange, onSave, onCancel,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  value: string;
+  editing: boolean;
+  editValue: string;
+  onEdit: () => void;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1 text-[10px] text-[#4a5160] uppercase tracking-wide mb-0.5">
+        {icon}
+        {label}
+      </div>
+      {editing ? (
+        <div className="flex gap-1">
+          <input
+            autoFocus
+            className="flex-1 bg-[#1e1f30] border border-[#f97316]/50 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }}
+          />
+          <button onClick={onSave} className="px-2 py-0.5 bg-[#f97316] text-white text-xs rounded hover:bg-[#ea6d0e]">✓</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 group">
+          <span className="flex-1 text-sm text-white truncate">{value}</span>
+          <button
+            onClick={onEdit}
+            className="opacity-0 group-hover:opacity-100 w-5 h-5 bg-[#f97316] hover:bg-[#ea6d0e] rounded flex items-center justify-center transition-all shrink-0"
+          >
+            <span className="text-white text-[10px]">✎</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

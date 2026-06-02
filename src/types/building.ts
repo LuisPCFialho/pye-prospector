@@ -23,6 +23,45 @@ export type BuildingUse =
   | "office"
   | "other";
 
+export type DropReason =
+  | "rooftop_shading"
+  | "low_energy_consumption"
+  | "incompatible_client_profile"
+  | "insufficient_roof_space"
+  | "poor_financial_viability"
+  | "insufficient_structural_stability"
+  | "client_not_interested"
+  | "legal_zoning_restrictions"
+  | "access_challenges"
+  | "low_energy_yield"
+  | "high_installation_costs"
+  | "technical_constraints"
+  | "inactive_client"
+  | "outside_target_market"
+  | "vacant_property"
+  | "other"
+  | "solar_installed_already";
+
+export const DROP_REASON_LABELS: Record<DropReason, string> = {
+  rooftop_shading: "Rooftop Shading Issues",
+  low_energy_consumption: "Low Energy Consumption",
+  incompatible_client_profile: "Incompatible Client Profile",
+  insufficient_roof_space: "Insufficient Roof Space",
+  poor_financial_viability: "Poor Financial Viability",
+  insufficient_structural_stability: "Insufficient Structural Stability",
+  client_not_interested: "Client Not Interested",
+  legal_zoning_restrictions: "Legal or Zoning Restrictions",
+  access_challenges: "Access Challenges for Installation",
+  low_energy_yield: "Low Energy Yield Potential",
+  high_installation_costs: "High Installation Costs",
+  technical_constraints: "Technical Constraints",
+  inactive_client: "Inactive or Unresponsive Client",
+  outside_target_market: "Project Outside Target Market/Scope",
+  vacant_property: "Vacant Property",
+  other: "Other",
+  solar_installed_already: "Solar Installed Already",
+};
+
 export interface BuildingFeature {
   id: string;
   osmId?: number;
@@ -49,18 +88,15 @@ export interface Lead {
   company?: string;
   telephone?: string;
   website?: string;
+  email?: string;
   notes?: string;
   tags?: string;
   owner?: string;
-  score?: number;                    // 0-100 lead score
-  scoreExplanations?: string[];      // PT-language explanations
-  nif?: string;                      // Portuguese VAT
-  cae?: string;                      // Activity code
-  estimatedValueEur?: number;        // Deal value
-  probability?: number;              // 0-100 win probability
-  industrialPark?: string;           // Source park slug
+  nif?: string;
   buildingUse?: BuildingUse;
   hasExistingPv?: "yes" | "no" | "unknown";
+  dropReason?: DropReason;
+  flagged?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,16 +107,6 @@ export interface LeadNote {
   author: string;
   body: string;
   createdAt: string;
-}
-
-export interface LeadTask {
-  id: string;
-  leadId: string;
-  title: string;
-  done: boolean;
-  dueDate?: string;
-  createdAt: string;
-  completedAt?: string;
 }
 
 export const SOLAR_STATUS_LABELS: Record<SolarStatus, string> = {
@@ -128,10 +154,18 @@ export const BUILDING_USE_LABELS: Record<BuildingUse, string> = {
   other: "Outro",
 };
 
-/** Kanban macro-stages for the pipeline board */
-export const KANBAN_COLUMNS: { id: PipelineStage[]; label: string; color: string }[] = [
-  { id: ["to_contact"], label: "Prospeção", color: "#94a3b8" },
-  { id: ["contacted", "meeting"], label: "Contacto", color: "#60a5fa" },
-  { id: ["proposal"], label: "Proposta", color: "#a78bfa" },
-  { id: ["won", "lost"], label: "Fecho", color: "#22c55e" },
-];
+/** Returns the MapLibre fill color for a building polygon */
+export function buildingFillColor(
+  solarStatus: SolarStatus | undefined,
+  pipelineStage: PipelineStage | undefined,
+  flagged?: boolean,
+): string {
+  if (flagged) return "#eab308";
+  if (solarStatus === "has_panels") return "#22c55e";
+  if (solarStatus === "partial") return "#f97316";
+  if (pipelineStage === "contacted" || pipelineStage === "meeting") return "#eab308";
+  if (pipelineStage === "proposal") return "#a78bfa";
+  if (pipelineStage === "won") return "#22c55e";
+  if (pipelineStage === "lost") return "#475569";
+  return "#ef4444";
+}

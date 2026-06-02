@@ -1,130 +1,228 @@
+import { useState } from "react";
+import { ArrowUpDown, ExternalLink, Sun, Flag, X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { exportLeadsCSV } from "../db/database";
-import {
-  SOLAR_STATUS_LABELS, PIPELINE_LABELS,
-  SOLAR_STATUS_COLORS, PIPELINE_COLORS,
-} from "../types/building";
+import { SOLAR_STATUS_COLORS, PIPELINE_COLORS } from "../types/building";
+import { estimatePeakPower } from "../lib/pvgis";
+
+type SortKey = "name" | "area" | "kwp" | "company" | "pipeline";
 
 export default function TableView() {
-  const buildings = useAppStore((s) => s.buildings);
-  const leads = useAppStore((s) => s.leads);
+  const buildings         = useAppStore((s) => s.buildings);
+  const leads             = useAppStore((s) => s.leads);
   const filterSolarStatus = useAppStore((s) => s.filterSolarStatus);
-  const filterPipelineStage = useAppStore((s) => s.filterPipelineStage);
-  const filterMinAreaSqm = useAppStore((s) => s.filterMinAreaSqm);
-  const selectBuilding = useAppStore((s) => s.selectBuilding);
-  const setViewMode = useAppStore((s) => s.setViewMode);
+  const filterMinAreaSqm  = useAppStore((s) => s.filterMinAreaSqm);
+  const filterMaxAreaSqm  = useAppStore((s) => s.filterMaxAreaSqm);
+  const filterKeyword     = useAppStore((s) => s.filterKeyword);
+  const selectBuilding    = useAppStore((s) => s.selectBuilding);
+  const setViewMode       = useAppStore((s) => s.setViewMode);
 
-  const rows = buildings
-    .filter((b) => {
-      const lead = leads[b.id];
-      if (filterSolarStatus !== "all" && lead?.solarStatus !== filterSolarStatus) return false;
-      if (filterPipelineStage !== "all" && lead?.pipelineStage !== filterPipelineStage) return false;
-      if (b.areaSqm < filterMinAreaSqm) return false;
-      return true;
-    })
-    .sort((a, b) => b.areaSqm - a.areaSqm);
+  const [sortKey, setSortKey]   = useState<SortKey>("area");
+  const [sortDesc, setSortDesc] = useState(true);
+
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) setSortDesc(!sortDesc);
+    else { setSortKey(k); setSortDesc(true); }
+  }
 
   async function handleExport() {
     try {
       const csv = await exportLeadsCSV();
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "pye_leads.csv";
-      a.click();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = "pye_leads.csv"; a.click();
       URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("Export failed", e);
-    }
+    } catch { /* ignore */ }
   }
 
+  const rows = buildings
+    .filter((b) => {
+      const lead = leads[b.id];
+      if (filterSolarStatus !== "all" && lead?.solarStatus !== filterSolarStatus) return false;
+      const minA = filterMinAreaSqm || 0;
+      if (minA > 0 && b.areaSqm < minA) return false;
+      const maxA = filterMaxAreaSqm || 0;
+      if (maxA > 0 && b.areaSqm > maxA) return false;
+      if (filterKeyword) {
+        const kw = filterKeyword.toLowerCase();
+        const hit = [b.name, b.operator, lead?.company].some((v) => v?.toLowerCase().includes(kw));
+        if (!hit) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const la = leads[a.id], lb = leads[b.id];
+      let va: string | number = 0, vb: string | number = 0;
+      switch (sortKey) {
+        case "name":     va = a.name ?? ""; vb = b.name ?? ""; break;
+        case "area":     va = a.areaSqm;    vb = b.areaSqm;    break;
+        case "kwp":      va = la?.estimatedKwp ?? estimatePeakPower(a.areaSqm);
+                         vb = lb?.estimatedKwp ?? estimatePeakPower(b.areaSqm); break;
+        case "company":  va = la?.company ?? ""; vb = lb?.company ?? ""; break;
+        case "pipeline": va = la?.pipelineStage ?? ""; vb = lb?.pipelineStage ?? ""; break;
+      }
+      if (typeof va === "string") return sortDesc ? vb.toString().localeCompare(va.toString()) : va.toString().localeCompare(vb.toString());
+      return sortDesc ? (vb as number) - (va as number) : (va as number) - (vb as number);
+    });
+
+  const Th = ({ label, k }: { label: string; k?: SortKey }) => (
+    <th
+      className={`px-4 py-2.5 text-left text-[11px] font-medium text-[#8892a4] uppercase tracking-wide whitespace-nowrap ${k ? "cursor-pointer hover:text-[#c8d0df]" : ""}`}
+      onClick={k ? () => toggleSort(k) : undefined}
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        {k && <ArrowUpDown size={11} className={sortKey === k ? "text-[#f97316]" : "opacity-40"} />}
+      </span>
+    </th>
+  );
+
   return (
-    <div className="flex flex-col h-full bg-[#0f0f1a] text-slate-100">
+    <div className="flex flex-col h-full bg-[#0d0e1a] text-white">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-[#1a1a2e] shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setViewMode("map")} className="text-slate-400 hover:text-white text-sm">
-            ← Voltar ao mapa
-          </button>
-          <span className="text-slate-600">|</span>
-          <span className="text-sm text-slate-300">{rows.length} edifícios</span>
-        </div>
+      <div className="flex items-center gap-4 px-5 py-3 border-b border-[#1e1f30] bg-[#13131f] shrink-0">
         <button
-          onClick={handleExport}
-          className="px-4 py-1.5 rounded bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-semibold"
+          type="button"
+          onClick={() => setViewMode("map")}
+          className="flex items-center gap-1.5 text-[#8892a4] hover:text-white text-xs transition-colors"
         >
-          Exportar CSV
+          <X size={14} />
+          <span>Back to Map</span>
+        </button>
+        <span className="text-[#1e1f30]">|</span>
+        <span className="text-xs text-[#8892a4]">{rows.length.toLocaleString("pt-PT")} locations</span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f97316] hover:bg-[#ea6d0e] text-white text-xs font-semibold rounded-lg transition-colors"
+        >
+          Export
         </button>
       </div>
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-[#1a1a2e] border-b border-slate-700">
+        <table className="w-full text-xs border-collapse">
+          <thead className="sticky top-0 bg-[#13131f] border-b border-[#1e1f30]">
             <tr>
-              {["Nome / Morada", "Área m²", "Tag", "Painéis", "Pipeline", "kWh/ano", "Empresa"].map((h) => (
-                <th key={h} className="px-4 py-2.5 text-left text-slate-400 font-medium">{h}</th>
-              ))}
+              <Th label="Location Name" k="name" />
+              <Th label="Company"       k="company" />
+              <Th label="Industry" />
+              <Th label="Area (m²)"     k="area" />
+              <Th label="Solar Potential (kWp)" k="kwp" />
+              <Th label="Solar" />
+              <Th label="Flag" />
+              <Th label="Website" />
+              <Th label="Direct Link" />
             </tr>
           </thead>
           <tbody>
             {rows.map((b) => {
               const lead = leads[b.id];
+              const kwp  = lead?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+              const name = b.name ?? b.operator ?? `Way ${b.osmId ?? b.id.slice(0, 8)}`;
+
               return (
                 <tr
                   key={b.id}
                   onClick={() => { selectBuilding(b.id); setViewMode("map"); }}
-                  className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer"
+                  className="border-b border-[#1a1b2e] hover:bg-[#1a1b2e]/60 cursor-pointer transition-colors"
                 >
-                  <td className="px-4 py-2 max-w-[180px] truncate">
-                    {b.name || b.operator || `Way ${b.osmId ?? b.id.slice(0, 8)}`}
+                  {/* Location Name */}
+                  <td className="px-4 py-2.5 max-w-[200px]">
+                    <span className="truncate block text-white font-medium">{name}</span>
                   </td>
-                  <td className="px-4 py-2">{b.areaSqm.toLocaleString("pt-PT")}</td>
-                  <td className="px-4 py-2 text-slate-400">{b.buildingTag ?? "—"}</td>
-                  <td className="px-4 py-2">
-                    {lead ? (
-                      <span
-                        className="px-2 py-0.5 rounded-full text-[10px] font-medium"
-                        style={{
-                          background: SOLAR_STATUS_COLORS[lead.solarStatus] + "30",
-                          color: SOLAR_STATUS_COLORS[lead.solarStatus],
-                        }}
-                      >
-                        {SOLAR_STATUS_LABELS[lead.solarStatus]}
-                      </span>
+
+                  {/* Company */}
+                  <td className="px-4 py-2.5 max-w-[160px]">
+                    <span className="truncate block text-[#c8d0df]">{lead?.company ?? "—"}</span>
+                  </td>
+
+                  {/* Industry */}
+                  <td className="px-4 py-2.5 text-[#8892a4]">
+                    {lead?.buildingUse ? lead.buildingUse.replace("_", " ") : b.buildingTag ?? "—"}
+                  </td>
+
+                  {/* Area */}
+                  <td className="px-4 py-2.5 text-[#c8d0df] tabular-nums">
+                    {b.areaSqm.toLocaleString("pt-PT")}
+                  </td>
+
+                  {/* Solar Potential */}
+                  <td className="px-4 py-2.5 tabular-nums">
+                    <span className="text-[#f97316]">{kwp.toFixed(1)}</span>
+                  </td>
+
+                  {/* Solar icon */}
+                  <td className="px-4 py-2.5">
+                    {lead?.solarStatus && lead.solarStatus !== "unknown" ? (
+                      <Sun
+                        size={14}
+                        style={{ color: SOLAR_STATUS_COLORS[lead.solarStatus] }}
+                      />
                     ) : (
-                      <span className="text-slate-600">—</span>
+                      <span className="text-[#2a2b3d]">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2">
-                    {lead ? (
-                      <span
-                        className="px-2 py-0.5 rounded-full text-[10px] font-medium"
-                        style={{
-                          background: PIPELINE_COLORS[lead.pipelineStage] + "30",
-                          color: PIPELINE_COLORS[lead.pipelineStage],
-                        }}
-                      >
-                        {PIPELINE_LABELS[lead.pipelineStage]}
-                      </span>
+
+                  {/* Flag */}
+                  <td className="px-4 py-2.5">
+                    {lead?.pipelineStage && lead.pipelineStage !== "to_contact" ? (
+                      <Flag
+                        size={13}
+                        style={{ color: PIPELINE_COLORS[lead.pipelineStage] }}
+                        fill="currentColor"
+                      />
                     ) : (
-                      <span className="text-slate-600">—</span>
+                      <span className="text-[#2a2b3d]">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2">
-                    {lead?.estimatedKwhPerYear
-                      ? (lead.estimatedKwhPerYear / 1000).toFixed(1) + " MWh"
-                      : "—"}
+
+                  {/* Website */}
+                  <td className="px-4 py-2.5 max-w-[160px]">
+                    {lead?.website ? (
+                      <a
+                        href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[#60a5fa] hover:text-[#93c5fd] truncate block"
+                        title={lead.website}
+                      >
+                        {lead.website.replace(/^https?:\/\//, "").slice(0, 28)}
+                      </a>
+                    ) : (
+                      <span className="text-[#2a2b3d]">—</span>
+                    )}
                   </td>
-                  <td className="px-4 py-2 text-slate-300">{lead?.company ?? "—"}</td>
+
+                  {/* Direct Link */}
+                  <td className="px-4 py-2.5">
+                    {b.osmId ? (
+                      <a
+                        href={`https://www.openstreetmap.org/way/${b.osmId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[#8892a4] hover:text-white transition-colors"
+                        title="Abrir no OSM"
+                      >
+                        <ExternalLink size={13} />
+                      </a>
+                    ) : (
+                      <span className="text-[#2a2b3d]">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
+
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
-                  Sem edifícios. Usa "Get Rooftops" para importar.
+                <td colSpan={9} className="px-4 py-16 text-center text-[#4a5160] text-sm">
+                  Sem edifícios. Usa "Get Rooftops" na barra lateral para importar.
                 </td>
               </tr>
             )}

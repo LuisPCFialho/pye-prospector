@@ -1,5 +1,6 @@
 import * as turf from "@turf/turf";
-import type { BuildingFeature } from "../types/building";
+import type { BuildingFeature, Lead } from "../types/building";
+import { buildingFillColor } from "../types/building";
 
 export interface BBox {
   minLon: number; minLat: number; maxLon: number; maxLat: number;
@@ -12,7 +13,6 @@ interface OverpassElement {
   geometry?: { lat: number; lon: number }[];
 }
 
-// Public Overpass mirrors — tried in order until one responds
 const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
@@ -20,12 +20,10 @@ const MIRRORS = [
   "https://overpass.openstreetmap.ru/api/interpreter",
 ];
 
-// All buildings — area filter (≥300 m²) applied client-side to exclude small sheds/houses
 const CI_FILTER = `["building"]`;
 
 function buildQuery(bbox: BBox): string {
   const { minLat, minLon, maxLat, maxLon } = bbox;
-  // timeout:25 keeps each mirror attempt short so we can fallback quickly
   return `[out:json][timeout:25][maxsize:32000000];
 (
   way${CI_FILTER}(${minLat},${minLon},${maxLat},${maxLon});
@@ -98,7 +96,6 @@ export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[
 
       const text = await res.text();
 
-      // Overpass sometimes returns 200 with an XML error body
       if (text.trimStart().startsWith("<")) {
         const msg = text.match(/<p[^>]*>.*?Error.*?<\/p>/s)?.[0]
           ?.replace(/<[^>]+>/g, "").trim()
@@ -122,16 +119,29 @@ export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[
   );
 }
 
+/** Build GeoJSON, enriching each feature with lead status for map coloring. */
 export function buildingsToGeoJSON(
   buildings: BuildingFeature[],
+  leads?: Record<string, Lead>,
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: buildings.map((b) => ({
-      type: "Feature" as const,
-      id: b.osmId,
-      properties: { ...b, geometryGeoJSON: undefined },
-      geometry: b.geometryGeoJSON,
-    })),
+    features: buildings.map((b) => {
+      const lead = leads?.[b.id];
+      const color = buildingFillColor(lead?.solarStatus, lead?.pipelineStage, lead?.flagged);
+      return {
+        type: "Feature" as const,
+        id: b.osmId,
+        properties: {
+          ...b,
+          geometryGeoJSON: undefined,
+          fillColor: color,
+          solarStatus: lead?.solarStatus ?? "unknown",
+          pipelineStage: lead?.pipelineStage ?? "to_contact",
+          flagged: lead?.flagged ? 1 : 0,
+        },
+        geometry: b.geometryGeoJSON,
+      };
+    }),
   };
 }
