@@ -1,5 +1,76 @@
 import type { BuildingFeature, Lead } from "../types/building";
 
+const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY ?? "";
+
+export interface CompanyInfo {
+  name?: string;
+  phone?: string;
+  website?: string;
+  email?: string;
+  nif?: string;
+  confidence: "high" | "medium" | "low";
+}
+
+/**
+ * Ask Gemini what company operates at a given coordinate in Portugal.
+ * Returns null if Gemini can't identify it with confidence.
+ */
+export async function lookupCompanyWithGemini(
+  lat: number,
+  lon: number,
+  address?: string,
+): Promise<CompanyInfo | null> {
+  if (!GEMINI_KEY) return null;
+  const models = [
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+  ];
+  const locationHint = address
+    ? `morada: "${address}"`
+    : `coordenadas GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)} (Portugal)`;
+  const prompt = `Identifica a empresa ou negócio que opera nesta localização em Portugal (${locationHint}).
+Responde APENAS com JSON válido no formato:
+{"name":"NomeEmpresa","phone":"+351XXXXXXXXX","website":"https://...","nif":"XXXXXXXXX","confidence":"high|medium|low"}
+- confidence "high" = tens certeza absoluta (empresa conhecida, informação verificável)
+- confidence "medium" = razoavelmente confiante
+- confidence "low" = apenas suspeita
+- Se não souberes, responde: {"confidence":"low"}
+- NIF só se souberes com certeza, caso contrário omite
+- Responde APENAS com o JSON, sem texto adicional.`;
+
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12_000);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 200 },
+        }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (res.status === 429 || res.status === 404) continue;
+      if (!res.ok) continue;
+      const data = await res.json();
+      const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) continue;
+      const parsed = JSON.parse(jsonMatch[0]) as CompanyInfo;
+      if (!parsed.name && parsed.confidence === "low") return null;
+      return parsed;
+    } catch {
+      // try next model
+    }
+  }
+  return null;
+}
+
 type AIAction = "summarize" | "email" | "script";
 
 interface AIRequest {
@@ -7,8 +78,6 @@ interface AIRequest {
   building: BuildingFeature;
   lead?: Lead;
 }
-
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY ?? "";
 
 /**
  * AI Assistant — generates summary, outreach email, or sales script for a lead.

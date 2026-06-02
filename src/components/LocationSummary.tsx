@@ -4,8 +4,9 @@ import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
 import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
-import { openExternal, streetViewUrl, googleMapsUrl } from "../lib/openExternal";
+import { openExternal, streetViewUrl, googleNearbySearchUrl } from "../lib/openExternal";
 import { findNearbyBusinesses, type NearbyBusiness } from "../lib/companyLookup";
+import { lookupCompanyWithGemini, type CompanyInfo } from "../lib/gemini";
 
 type Tab = "flag" | "solar" | "drop";
 
@@ -23,8 +24,9 @@ export default function LocationSummary() {
   const [calcingSolar, setCalcing]         = useState(false);
   const [editingField, setEditing]         = useState<string | null>(null);
   const [editValue, setEditValue]          = useState("");
-  const [nearbySuggestions, setSuggestions] = useState<NearbyBusiness[]>([]);
-  const [loadingSuggestions, setLoadingSug] = useState(false);
+  const [nearbySuggestions, setSuggestions]   = useState<NearbyBusiness[]>([]);
+  const [geminiSuggestion, setGeminiSug]       = useState<CompanyInfo | null>(null);
+  const [loadingSuggestions, setLoadingSug]    = useState(false);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
@@ -108,6 +110,24 @@ export default function LocationSummary() {
     } finally {
       setCalcing(false);
     }
+  }
+
+  async function handleGetMetadata() {
+    if (!building) return;
+    setLoadingSug(true);
+    setSuggestions([]);
+    setGeminiSug(null);
+    const [overpassResults, geminiResult] = await Promise.all([
+      findNearbyBusinesses(building.centroidLat, building.centroidLon),
+      lookupCompanyWithGemini(
+        building.centroidLat,
+        building.centroidLon,
+        lead?.address,
+      ),
+    ]);
+    setSuggestions(overpassResults.slice(0, 5));
+    if (geminiResult?.name) setGeminiSug(geminiResult);
+    setLoadingSug(false);
   }
 
   const locationName = building.name ?? building.operator ?? lead?.address ?? `Way ${building.osmId ?? building.id.slice(0, 8)}`;
@@ -257,18 +277,46 @@ export default function LocationSummary() {
               />
             )}
 
+            {/* Gemini suggestion chip */}
+            {geminiSuggestion?.name && (
+              <div>
+                <div className="text-[10px] text-[#8892a4] uppercase tracking-wide mb-1">
+                  IA {geminiSuggestion.confidence === "high" ? "✓ Alta confiança" : geminiSuggestion.confidence === "medium" ? "⚠ Média confiança" : "? Baixa confiança"}
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await saveField("company", geminiSuggestion.name!);
+                    if (geminiSuggestion.website) await saveField("website", geminiSuggestion.website);
+                    if (geminiSuggestion.phone) await saveField("telephone", geminiSuggestion.phone);
+                    if (geminiSuggestion.email) await saveField("email", geminiSuggestion.email);
+                    if (geminiSuggestion.nif) await saveField("nif", geminiSuggestion.nif);
+                    setGeminiSug(null);
+                  }}
+                  className={`w-full px-2 py-1 rounded border text-[11px] text-left transition-all ${
+                    geminiSuggestion.confidence === "high"
+                      ? "bg-green-900/20 border-green-700/40 text-green-300 hover:bg-green-900/30"
+                      : geminiSuggestion.confidence === "medium"
+                      ? "bg-yellow-900/20 border-yellow-700/40 text-yellow-300 hover:bg-yellow-900/30"
+                      : "bg-[#1e1f30] border-[#2a2b3d] text-[#8892a4] hover:text-white"
+                  }`}
+                >
+                  🤖 {geminiSuggestion.name}
+                  {geminiSuggestion.phone && <span className="text-[10px] opacity-70 ml-1">· {geminiSuggestion.phone}</span>}
+                </button>
+              </div>
+            )}
+
             {/* Action row */}
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
-                title="Pesquisar empresa no Google"
-                onClick={() => {
-                  const name = displayCompany !== "(sem nome — verificar)" ? displayCompany : locationName;
-                  openExternal(`https://www.google.com/search?q=${encodeURIComponent(name + " empresa contactos Portugal")}`);
-                }}
-                className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors"
+                title="Pesquisar empresa (OSM + IA)"
+                onClick={handleGetMetadata}
+                disabled={loadingSuggestions}
+                className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors disabled:opacity-50"
               >
-                Get Metadata
+                {loadingSuggestions ? "A procurar…" : "Get Metadata"}
               </button>
               {displayWebsite && (
                 <button
@@ -282,8 +330,8 @@ export default function LocationSummary() {
               )}
               <button
                 type="button"
-                title="Abrir no Google Maps"
-                onClick={() => openExternal(googleMapsUrl(building.centroidLat, building.centroidLon))}
+                title="Empresas próximas no Google Maps"
+                onClick={() => openExternal(googleNearbySearchUrl(building.centroidLat, building.centroidLon))}
                 className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
               >
                 <MapPin size={13} />

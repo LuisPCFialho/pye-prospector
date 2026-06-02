@@ -15,12 +15,18 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
-/** Google Street View deep-link (no API key needed). */
+/** Opens directly in Google Street View at the given coordinates. */
 export function streetViewUrl(lat: number, lon: number): string {
-  return `https://www.google.com/maps?q=&layer=c&cbll=${lat},${lon}&cbp=12,90,0,0,5`;
+  // @lat,lon,3a = street view mode; 75y = FOV; 90t = tilt; data=!3m6!1e1 = street view layer
+  return `https://www.google.com/maps/@${lat},${lon},3a,75y,90t/data=!3m6!1e1`;
 }
 
-/** Google Maps satellite view. */
+/** Google Maps satellite view centered on coordinates. */
 export function googleMapsUrl(lat: number, lon: number): string {
   return `https://www.google.com/maps/@${lat},${lon},18z/data=!3m1!1e3`;
+}
+
+/** Google Maps search for businesses near a coordinate. */
+export function googleNearbySearchUrl(lat: number, lon: number): string {
+  return `https://www.google.com/maps/search/empresas/@${lat},${lon},17z`;
 }
