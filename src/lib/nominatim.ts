@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { timedFetch } from "./fetchUtils";
 
 export interface ReverseGeocodeResult {
   displayName: string;
@@ -22,9 +23,16 @@ export async function reverseGeocode(lat: number, lon: number): Promise<ReverseG
     zoom: "18",
   });
 
-  const res = await fetch(`${config.nominatimUrl}/reverse?${params.toString()}`, {
-    headers: { "User-Agent": config.userAgent, "Accept-Language": "pt-PT,pt;q=0.9" },
-  });
+  let res: Response;
+  try {
+    res = await timedFetch(`${config.nominatimUrl}/reverse?${params.toString()}`, {
+      headers: { "Accept-Language": "pt-PT,pt;q=0.9" },
+      timeoutMs: 8_000,
+      retries: 1,
+    });
+  } catch {
+    return null;
+  }
   if (!res.ok) return null;
 
   const data = await res.json();
