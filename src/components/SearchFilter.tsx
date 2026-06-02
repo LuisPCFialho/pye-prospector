@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { estimatePeakPower } from "../lib/pvgis";
 
 export default function SearchFilter() {
   const buildings             = useAppStore((s) => s.buildings);
@@ -9,6 +10,8 @@ export default function SearchFilter() {
   const filterPipelineStage   = useAppStore((s) => s.filterPipelineStage);
   const filterMinAreaSqm      = useAppStore((s) => s.filterMinAreaSqm);
   const filterMaxAreaSqm      = useAppStore((s) => s.filterMaxAreaSqm);
+  const filterMinKwp          = useAppStore((s) => s.filterMinKwp);
+  const filterMaxKwp          = useAppStore((s) => s.filterMaxKwp);
   const filterKeyword         = useAppStore((s) => s.filterKeyword);
   const filterOnlyFlagged     = useAppStore((s) => s.filterOnlyFlagged);
   const filterOnlyDropped     = useAppStore((s) => s.filterOnlyDropped);
@@ -18,14 +21,18 @@ export default function SearchFilter() {
   const setFilterPipelineStage  = useAppStore((s) => s.setFilterPipelineStage);
   const setFilterMinAreaSqm     = useAppStore((s) => s.setFilterMinAreaSqm);
   const setFilterMaxAreaSqm     = useAppStore((s) => s.setFilterMaxAreaSqm);
+  const setFilterMinKwp         = useAppStore((s) => s.setFilterMinKwp);
+  const setFilterMaxKwp         = useAppStore((s) => s.setFilterMaxKwp);
   const setFilterKeyword        = useAppStore((s) => s.setFilterKeyword);
   const setFilterOnlyFlagged    = useAppStore((s) => s.setFilterOnlyFlagged);
   const setFilterOnlyDropped    = useAppStore((s) => s.setFilterOnlyDropped);
   const setFilterExcludeDropped = useAppStore((s) => s.setFilterExcludeDropped);
   const setShowSearchFilter     = useAppStore((s) => s.setShowSearchFilter);
 
-  const [localMin, setLocalMin] = useState(filterMinAreaSqm.toString());
-  const [localMax, setLocalMax] = useState(filterMaxAreaSqm > 0 ? filterMaxAreaSqm.toString() : "");
+  const [localMin, setLocalMin]       = useState(filterMinAreaSqm.toString());
+  const [localMax, setLocalMax]       = useState(filterMaxAreaSqm > 0 ? filterMaxAreaSqm.toString() : "");
+  const [localMinKwp, setLocalMinKwp] = useState(filterMinKwp > 0 ? filterMinKwp.toString() : "");
+  const [localMaxKwp, setLocalMaxKwp] = useState(filterMaxKwp > 0 ? filterMaxKwp.toString() : "");
 
   // Count matching results
   const matchCount = buildings.filter((b) => {
@@ -36,6 +43,11 @@ export default function SearchFilter() {
     if (minA > 0 && b.areaSqm < minA) return false;
     const maxA = filterMaxAreaSqm || 0;
     if (maxA > 0 && b.areaSqm > maxA) return false;
+    if (filterMinKwp > 0 || filterMaxKwp > 0) {
+      const kwp = lead?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+      if (filterMinKwp > 0 && kwp < filterMinKwp) return false;
+      if (filterMaxKwp > 0 && kwp > filterMaxKwp) return false;
+    }
     if (filterKeyword) {
       const kw = filterKeyword.toLowerCase();
       const matches = [b.name, b.operator, lead?.company, lead?.tags].some((v) => v?.toLowerCase().includes(kw));
@@ -50,6 +62,8 @@ export default function SearchFilter() {
   function handleApply() {
     setFilterMinAreaSqm(Number(localMin) || 0);
     setFilterMaxAreaSqm(Number(localMax) || 0);
+    setFilterMinKwp(Number(localMinKwp) || 0);
+    setFilterMaxKwp(Number(localMaxKwp) || 0);
     setShowSearchFilter(false);
   }
 
@@ -58,12 +72,16 @@ export default function SearchFilter() {
     setFilterPipelineStage("all");
     setFilterMinAreaSqm(0);
     setFilterMaxAreaSqm(0);
+    setFilterMinKwp(0);
+    setFilterMaxKwp(0);
     setFilterKeyword("");
     setFilterOnlyFlagged(false);
     setFilterOnlyDropped(false);
     setFilterExcludeDropped(false);
     setLocalMin("0");
     setLocalMax("");
+    setLocalMinKwp("");
+    setLocalMaxKwp("");
   }
 
   return (
@@ -112,6 +130,33 @@ export default function SearchFilter() {
                 className="flex-1 h-8 bg-[#1e1f30] border border-[#2a2b3d] rounded-lg px-3 text-xs text-white placeholder-[#4a5160] focus:outline-none focus:border-[#f97316]/50"
               />
               <span className="text-[10px] text-[#4a5160]">m²</span>
+            </div>
+          </section>
+
+          {/* Solar Potential kWp */}
+          <section>
+            <label className="block text-[10px] text-[#8892a4] uppercase tracking-wide mb-2">
+              Potencial Solar (kWp)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                aria-label="kWp mínimo"
+                placeholder="Min"
+                value={localMinKwp}
+                onChange={(e) => setLocalMinKwp(e.target.value)}
+                className="flex-1 h-8 bg-[#1e1f30] border border-[#2a2b3d] rounded-lg px-3 text-xs text-white placeholder-[#4a5160] focus:outline-none focus:border-[#f97316]/50"
+              />
+              <span className="text-[#4a5160] text-xs">—</span>
+              <input
+                type="number"
+                aria-label="kWp máximo"
+                placeholder="Max"
+                value={localMaxKwp}
+                onChange={(e) => setLocalMaxKwp(e.target.value)}
+                className="flex-1 h-8 bg-[#1e1f30] border border-[#2a2b3d] rounded-lg px-3 text-xs text-white placeholder-[#4a5160] focus:outline-none focus:border-[#f97316]/50"
+              />
+              <span className="text-[10px] text-[#4a5160]">kWp</span>
             </div>
           </section>
 

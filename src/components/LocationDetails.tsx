@@ -4,6 +4,7 @@ import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead, duplicateLead, getAllLeads } from "../db/database";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
+import { openExternal, streetViewUrl, googleMapsUrl } from "../lib/openExternal";
 
 type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "streetview";
 
@@ -232,20 +233,27 @@ export default function LocationDetails() {
               <EditField label="Tags" value={lead?.tags ?? ""} onChange={(v) => handleField("tags", v)} />
               {lead?.company && (
                 <div className="col-span-2 flex gap-2 mt-2">
-                  <a
-                    href={`https://www.google.com/search?q=${encodeURIComponent(lead.company + " contactos website Portugal")}`}
-                    target="_blank" rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openExternal(`https://www.google.com/search?q=${encodeURIComponent(lead.company! + " empresa contactos Portugal")}`)}
                     className="flex-1 text-center py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200"
                   >
-                    🔍 Pesquisar empresa no Google
-                  </a>
-                  <a
-                    href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(lead.company)}`}
-                    target="_blank" rel="noopener noreferrer"
+                    🔍 Google
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openExternal(`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(lead.company!)}`)}
                     className="flex-1 text-center py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200"
                   >
-                    💼 Pesquisar no LinkedIn
-                  </a>
+                    💼 LinkedIn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openExternal(googleMapsUrl(building.centroidLat, building.centroidLon))}
+                    className="flex-1 text-center py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200"
+                  >
+                    🗺️ Google Maps
+                  </button>
                 </div>
               )}
             </div>
@@ -272,20 +280,27 @@ export default function LocationDetails() {
               ))}
               <div className="flex gap-3 mt-4 pt-3 border-t border-slate-700/50">
                 {building.osmId && (
-                  <a
-                    href={`https://www.openstreetmap.org/way/${building.osmId}`}
-                    target="_blank" rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openExternal(`https://www.openstreetmap.org/way/${building.osmId}`)}
                     className="text-xs text-brand-400 hover:text-brand-300"
                   >
                     Abrir no OSM ↗
-                  </a>
+                  </button>
                 )}
                 <button
                   type="button"
-                  onClick={() => { setShowLocationDetails(false); setShowStreetView(true); }}
+                  onClick={() => openExternal(streetViewUrl(building.centroidLat, building.centroidLon))}
                   className="text-xs text-brand-400 hover:text-brand-300"
                 >
                   Street View ↗
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openExternal(googleMapsUrl(building.centroidLat, building.centroidLon))}
+                  className="text-xs text-brand-400 hover:text-brand-300"
+                >
+                  Google Maps ↗
                 </button>
               </div>
             </div>

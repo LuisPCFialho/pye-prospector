@@ -7,6 +7,7 @@ import { useAppStore } from "../store/appStore";
 import { buildingsToGeoJSON } from "../lib/overpass";
 import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
+import { estimatePeakPower } from "../lib/pvgis";
 import * as turf from "@turf/turf";
 
 const OSM_STYLE: maplibregl.StyleSpecification = {
@@ -111,11 +112,21 @@ export default function MapView() {
   const selectedIdRef = useRef<number | string | null>(null);
   const drawCoordsRef = useRef<[number, number][]>([]);
 
-  const buildings           = useAppStore((s) => s.buildings);
-  const leads               = useAppStore((s) => s.leads);
-  const drawMode            = useAppStore((s) => s.drawMode);
-  const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
-  const loadError           = useAppStore((s) => s.loadError);
+  const buildings             = useAppStore((s) => s.buildings);
+  const leads                 = useAppStore((s) => s.leads);
+  const drawMode              = useAppStore((s) => s.drawMode);
+  const selectedBuildingId    = useAppStore((s) => s.selectedBuildingId);
+  const loadError             = useAppStore((s) => s.loadError);
+  const filterSolarStatus     = useAppStore((s) => s.filterSolarStatus);
+  const filterPipelineStage   = useAppStore((s) => s.filterPipelineStage);
+  const filterMinAreaSqm      = useAppStore((s) => s.filterMinAreaSqm);
+  const filterMaxAreaSqm      = useAppStore((s) => s.filterMaxAreaSqm);
+  const filterKeyword         = useAppStore((s) => s.filterKeyword);
+  const filterOnlyFlagged     = useAppStore((s) => s.filterOnlyFlagged);
+  const filterOnlyDropped     = useAppStore((s) => s.filterOnlyDropped);
+  const filterExcludeDropped  = useAppStore((s) => s.filterExcludeDropped);
+  const filterMinKwp          = useAppStore((s) => s.filterMinKwp);
+  const filterMaxKwp          = useAppStore((s) => s.filterMaxKwp);
   const selectBuilding      = useAppStore((s) => s.selectBuilding);
   const addBuildings        = useAppStore((s) => s.addBuildings);
   const setLeads            = useAppStore((s) => s.setLeads);
@@ -292,17 +303,43 @@ export default function MapView() {
     if (drawMode === "none") { clearDraw(map); drawCoordsRef.current = []; }
   }, [drawMode]);
 
-  // Re-render buildings when buildings OR leads change.
-  // The persistent map.on("style.load") handler re-adds the source and seeds data
-  // after any style switch, so here we only need to update existing data.
+  // Re-render buildings when buildings, leads, or active filters change.
+  // Filtered-out buildings are hidden from the map immediately.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const geojson = buildingsToGeoJSON(buildings, leads);
+
+    const visibleBuildings = buildings.filter((b) => {
+      const lead = leads[b.id];
+      if (filterSolarStatus !== "all" && lead?.solarStatus !== filterSolarStatus) return false;
+      if (filterPipelineStage !== "all" && lead?.pipelineStage !== filterPipelineStage) return false;
+      if (filterMinAreaSqm > 0 && b.areaSqm < filterMinAreaSqm) return false;
+      if (filterMaxAreaSqm > 0 && b.areaSqm > filterMaxAreaSqm) return false;
+      if (filterKeyword) {
+        const kw = filterKeyword.toLowerCase();
+        const hit = [b.name, b.operator, lead?.company].some((v) => v?.toLowerCase().includes(kw));
+        if (!hit) return false;
+      }
+      if (filterOnlyFlagged && !lead?.flagged) return false;
+      if (filterOnlyDropped && lead?.pipelineStage !== "lost") return false;
+      if (filterExcludeDropped && lead?.pipelineStage === "lost") return false;
+      if (filterMinKwp > 0 || filterMaxKwp > 0) {
+        const kwp = lead?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+        if (filterMinKwp > 0 && kwp < filterMinKwp) return false;
+        if (filterMaxKwp > 0 && kwp > filterMaxKwp) return false;
+      }
+      return true;
+    });
+
+    const geojson = buildingsToGeoJSON(visibleBuildings, leads);
     const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (src) src.setData(geojson);
-    // If src is absent the style is still loading — the style.load handler will seed it from store.
-  }, [buildings, leads]);
+  }, [
+    buildings, leads,
+    filterSolarStatus, filterPipelineStage, filterMinAreaSqm, filterMaxAreaSqm,
+    filterMinKwp, filterMaxKwp,
+    filterKeyword, filterOnlyFlagged, filterOnlyDropped, filterExcludeDropped,
+  ]);
 
   // Pan to selected
   useEffect(() => {

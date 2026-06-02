@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap } from "lucide-react";
+import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap, MapPin } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
 import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
+import { openExternal, streetViewUrl, googleMapsUrl } from "../lib/openExternal";
 
 type Tab = "flag" | "solar" | "drop";
 
@@ -14,7 +15,6 @@ export default function LocationSummary() {
   const showLocationSummary = useAppStore((s) => s.showLocationSummary);
   const selectBuilding      = useAppStore((s) => s.selectBuilding);
   const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
-  const setShowStreetView   = useAppStore((s) => s.setShowStreetView);
   const setShowDropDialog   = useAppStore((s) => s.setShowDropDialog);
   const upsertLead          = useAppStore((s) => s.upsertLead);
 
@@ -211,42 +211,53 @@ export default function LocationSummary() {
               />
             )}
 
-            {/* Get Metadata row */}
+            {/* Action row */}
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
+                title="Pesquisar empresa no Google"
                 onClick={() => {
-                  if (displayCompany && displayCompany !== "(sem nome — verificar)") {
-                    window.open(`https://www.google.com/search?q=${encodeURIComponent(displayCompany + " contactos Portugal")}`, "_blank");
-                  }
+                  const name = displayCompany !== "(sem nome — verificar)" ? displayCompany : locationName;
+                  openExternal(`https://www.google.com/search?q=${encodeURIComponent(name + " empresa contactos Portugal")}`);
                 }}
                 className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors"
               >
                 Get Metadata
               </button>
               {displayWebsite && (
-                <a
-                  href={displayWebsite.startsWith("http") ? displayWebsite : `https://${displayWebsite}`}
-                  target="_blank" rel="noopener noreferrer"
+                <button
+                  type="button"
+                  title={`Abrir website: ${displayWebsite}`}
+                  onClick={() => openExternal(displayWebsite.startsWith("http") ? displayWebsite : `https://${displayWebsite}`)}
                   className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
                 >
                   <Link2 size={13} />
-                </a>
+                </button>
               )}
+              <button
+                type="button"
+                title="Abrir no Google Maps"
+                onClick={() => openExternal(googleMapsUrl(building.centroidLat, building.centroidLon))}
+                className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
+              >
+                <MapPin size={13} />
+              </button>
               {building.osmId && (
-                <a
-                  href={`https://www.openstreetmap.org/way/${building.osmId}`}
-                  target="_blank" rel="noopener noreferrer"
+                <button
+                  type="button"
+                  title="Abrir no OpenStreetMap"
+                  onClick={() => openExternal(`https://www.openstreetmap.org/way/${building.osmId}`)}
                   className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
                 >
                   <ExternalLink size={13} />
-                </a>
+                </button>
               )}
               <button
+                type="button"
+                title="Recalcular solar"
                 onClick={handleCalcSolar}
                 disabled={calcingSolar}
                 className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors disabled:opacity-40"
-                title="Recalcular solar"
               >
                 <RefreshCw size={13} className={calcingSolar ? "animate-spin" : ""} />
               </button>
@@ -302,7 +313,8 @@ export default function LocationSummary() {
           <ChevronRight size={14} />
         </button>
         <button
-          onClick={() => { setShowLocationDetails(false); setShowStreetView(true); }}
+          type="button"
+          onClick={() => openExternal(streetViewUrl(building.centroidLat, building.centroidLon))}
           className="w-full flex items-center justify-between text-[12px] text-[#8892a4] hover:text-white py-1 transition-colors"
         >
           <span>Street View</span>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
-import { findNearestImage, mapillaryEmbedUrl, googleStreetViewUrl } from "../lib/mapillary";
+import { findNearestImage, mapillaryEmbedUrl } from "../lib/mapillary";
+import { openExternal, streetViewUrl } from "../lib/openExternal";
 
 export default function StreetViewModal() {
   const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
@@ -22,7 +23,7 @@ export default function StreetViewModal() {
 
   if (!building) return null;
 
-  const fallbackUrl = googleStreetViewUrl(building.centroidLat, building.centroidLon);
+  const svUrl = streetViewUrl(building.centroidLat, building.centroidLon);
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
@@ -30,13 +31,15 @@ export default function StreetViewModal() {
         <div className="flex items-center justify-between px-4 py-2 bg-[#1a1a2e] border-b border-slate-700">
           <span className="text-sm font-medium">Street View</span>
           <div className="flex items-center gap-3">
-            <a
-              href={fallbackUrl} target="_blank" rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => openExternal(svUrl)}
               className="text-xs text-brand-400 hover:text-brand-300"
             >
               Abrir no Google Maps ↗
-            </a>
+            </button>
             <button
+              type="button"
               onClick={() => setShowStreetView(false)}
               className="text-slate-400 hover:text-white text-lg leading-none"
             >
@@ -54,12 +57,13 @@ export default function StreetViewModal() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
               <span className="text-sm">Sem imagens Mapillary para esta localização.</span>
-              <a
-                href={fallbackUrl} target="_blank" rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openExternal(svUrl)}
                 className="px-4 py-2 rounded bg-brand-500 hover:bg-brand-400 text-slate-950 text-sm font-semibold"
               >
                 Abrir Google Maps Street View
-              </a>
+              </button>
             </div>
           )}
         </div>

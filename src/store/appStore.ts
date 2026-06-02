@@ -36,6 +36,8 @@ interface AppState {
   filterPipelineStage: PipelineStage | "all";
   filterMinAreaSqm: number;
   filterMaxAreaSqm: number;
+  filterMinKwp: number;
+  filterMaxKwp: number;
   filterKeyword: string;
   filterOnlyFlagged: boolean;
   filterOnlyDropped: boolean;
@@ -72,6 +74,8 @@ interface AppState {
   setFilterPipelineStage: (v: PipelineStage | "all") => void;
   setFilterMinAreaSqm: (v: number) => void;
   setFilterMaxAreaSqm: (v: number) => void;
+  setFilterMinKwp: (v: number) => void;
+  setFilterMaxKwp: (v: number) => void;
   setFilterKeyword: (v: string) => void;
   setFilterOnlyFlagged: (v: boolean) => void;
   setFilterOnlyDropped: (v: boolean) => void;
@@ -105,6 +109,8 @@ export const useAppStore = create<AppState>((set) => ({
   filterPipelineStage: "all",
   filterMinAreaSqm: 0,
   filterMaxAreaSqm: 0,
+  filterMinKwp: 0,
+  filterMaxKwp: 0,
   filterKeyword: "",
   filterOnlyFlagged: false,
   filterOnlyDropped: false,
@@ -151,6 +157,8 @@ export const useAppStore = create<AppState>((set) => ({
   setFilterPipelineStage: (v) => set({ filterPipelineStage: v }),
   setFilterMinAreaSqm: (v) => set({ filterMinAreaSqm: v }),
   setFilterMaxAreaSqm: (v) => set({ filterMaxAreaSqm: v }),
+  setFilterMinKwp: (v) => set({ filterMinKwp: v }),
+  setFilterMaxKwp: (v) => set({ filterMaxKwp: v }),
   setFilterKeyword: (v) => set({ filterKeyword: v }),
   setFilterOnlyFlagged: (v) => set({ filterOnlyFlagged: v }),
   setFilterOnlyDropped: (v) => set({ filterOnlyDropped: v }),
