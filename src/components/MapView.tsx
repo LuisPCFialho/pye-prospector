@@ -285,10 +285,14 @@ export default function MapView() {
     const geojson = buildingsToGeoJSON(buildings, leads);
     const apply = () => {
       const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
-      if (src) src.setData(geojson);
+      if (src) { src.setData(geojson); return true; }
+      return false;
     };
-    if (map.isStyleLoaded()) apply();
-    else map.once("style.load", apply);
+    // Check if source already exists (avoids isStyleLoaded() race where
+    // it returns false while tiles load but the source is already present)
+    if (!apply()) {
+      map.once("style.load", apply);
+    }
   }, [buildings, leads]);
 
   // Pan to selected
