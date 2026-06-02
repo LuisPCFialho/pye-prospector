@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import type { BuildingFeature, Lead, LeadNote } from "../types/building";
 import { SOLAR_STATUS_LABELS, PIPELINE_LABELS } from "../types/building";
+import { getDisplayCompany, getDisplayWebsite, getDisplayPhone, pickEmail, pickNIF, pickAddress } from "./leadAutoFill";
 
 interface ExportData {
   buildings: BuildingFeature[];
@@ -14,19 +15,25 @@ export function exportToExcel(data: ExportData): void {
   // Sheet 1 — Leads
   const leadRows = data.buildings.map((b) => {
     const lead = data.leads[b.id];
+    const company = lead?.company || getDisplayCompany(b);
+    const website = lead?.website || getDisplayWebsite(b);
+    const phone   = lead?.telephone || getDisplayPhone(b);
+    const email   = lead?.email || pickEmail(b);
+    const nif     = lead?.nif || pickNIF(b);
+    const address = lead?.address || pickAddress(b);
     return {
       ID: b.id,
       "Nome / Operador": b.name ?? b.operator ?? "",
-      Morada: lead?.address ?? "",
+      Morada: address ?? "",
       Latitude: b.centroidLat.toFixed(6),
       Longitude: b.centroidLon.toFixed(6),
       "Área (m²)": Math.round(b.areaSqm),
       "Tipo OSM": b.buildingTag ?? "",
-      Empresa: lead?.company ?? "",
-      NIF: lead?.nif ?? "",
-      Telefone: lead?.telephone ?? "",
-      Website: lead?.website ?? "",
-      Email: lead?.email ?? "",
+      Empresa: company === "(sem nome — verificar)" ? "" : company,
+      NIF: nif ?? "",
+      Telefone: phone ?? "",
+      Website: website ?? "",
+      Email: email ?? "",
       "Estado Solar": lead ? SOLAR_STATUS_LABELS[lead.solarStatus] : "",
       Pipeline: lead ? PIPELINE_LABELS[lead.pipelineStage] : "",
       "kWp Estimado": lead?.estimatedKwp ?? "",

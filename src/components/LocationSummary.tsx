@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
+import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone } from "../lib/leadAutoFill";
 
 type Tab = "flag" | "solar" | "drop";
 
@@ -24,6 +25,33 @@ export default function LocationSummary() {
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
+
+  // Auto-fill lead from OSM tags whenever a building is opened
+  useEffect(() => {
+    if (!building) return;
+    const base: import("../types/building").Lead = lead ?? {
+      id: crypto.randomUUID(),
+      buildingId: building.id,
+      solarStatus: "unknown",
+      pipelineStage: "to_contact",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const filled = autoFillLeadFromOSM(building, base);
+    if (filled !== base && (
+      filled.company !== base.company ||
+      filled.website !== base.website ||
+      filled.telephone !== base.telephone ||
+      filled.email !== base.email ||
+      filled.nif !== base.nif ||
+      filled.address !== base.address ||
+      filled.solarStatus !== base.solarStatus
+    )) {
+      saveLead(filled).catch(() => {});
+      upsertLead(filled);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [building?.id]);
 
   if (!showLocationSummary || !building) return null;
 
@@ -67,6 +95,9 @@ export default function LocationSummary() {
   }
 
   const locationName = building.name ?? building.operator ?? lead?.address ?? `Way ${building.osmId ?? building.id.slice(0, 8)}`;
+  const displayCompany = getDisplayCompany(building, lead);
+  const displayWebsite = getDisplayWebsite(building, lead);
+  const displayPhone   = getDisplayPhone(building, lead);
   const addedDate    = lead?.createdAt ? new Date(lead.createdAt).toLocaleDateString("pt-PT") : "Hoje";
   const updatedDate  = lead?.updatedAt ? new Date(lead.updatedAt).toLocaleDateString("pt-PT") : "Hoje";
 
@@ -135,10 +166,10 @@ export default function LocationSummary() {
             <EditableFieldRow
               label="Company Name"
               icon={<Building2 size={13} className="text-[#8892a4]" />}
-              value={lead?.company ?? "—"}
+              value={displayCompany}
               editing={editingField === "company"}
               editValue={editValue}
-              onEdit={() => { setEditing("company"); setEditValue(lead?.company ?? ""); }}
+              onEdit={() => { setEditing("company"); setEditValue(displayCompany === "(sem nome — verificar)" ? "" : displayCompany); }}
               onChange={setEditValue}
               onSave={() => saveField("company", editValue)}
               onCancel={() => setEditing(null)}
@@ -148,24 +179,24 @@ export default function LocationSummary() {
             <EditableFieldRow
               label="Website"
               icon={<Globe size={13} className="text-[#8892a4]" />}
-              value={lead?.website ?? "—"}
+              value={displayWebsite ?? "—"}
               editing={editingField === "website"}
               editValue={editValue}
-              onEdit={() => { setEditing("website"); setEditValue(lead?.website ?? ""); }}
+              onEdit={() => { setEditing("website"); setEditValue(displayWebsite ?? ""); }}
               onChange={setEditValue}
               onSave={() => saveField("website", editValue)}
               onCancel={() => setEditing(null)}
             />
 
-            {/* Telephone */}
-            {lead?.telephone && (
+            {/* Telephone — show from OSM or lead */}
+            {displayPhone && (
               <EditableFieldRow
                 label="Telephone"
                 icon={<Phone size={13} className="text-[#8892a4]" />}
-                value={lead.telephone}
+                value={displayPhone}
                 editing={editingField === "telephone"}
                 editValue={editValue}
-                onEdit={() => { setEditing("telephone"); setEditValue(lead.telephone ?? ""); }}
+                onEdit={() => { setEditing("telephone"); setEditValue(displayPhone); }}
                 onChange={setEditValue}
                 onSave={() => saveField("telephone", editValue)}
                 onCancel={() => setEditing(null)}
@@ -175,18 +206,19 @@ export default function LocationSummary() {
             {/* Get Metadata row */}
             <div className="flex items-center gap-2 pt-1">
               <button
-                onClick={async () => {
-                  if (lead?.company) {
-                    window.open(`https://www.google.com/search?q=${encodeURIComponent(lead.company + " contactos Portugal")}`, "_blank");
+                type="button"
+                onClick={() => {
+                  if (displayCompany && displayCompany !== "(sem nome — verificar)") {
+                    window.open(`https://www.google.com/search?q=${encodeURIComponent(displayCompany + " contactos Portugal")}`, "_blank");
                   }
                 }}
                 className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors"
               >
                 Get Metadata
               </button>
-              {lead?.website && (
+              {displayWebsite && (
                 <a
-                  href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                  href={displayWebsite.startsWith("http") ? displayWebsite : `https://${displayWebsite}`}
                   target="_blank" rel="noopener noreferrer"
                   className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
                 >

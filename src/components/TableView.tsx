@@ -4,6 +4,7 @@ import { useAppStore } from "../store/appStore";
 import { exportLeadsCSV } from "../db/database";
 import { SOLAR_STATUS_COLORS, PIPELINE_COLORS } from "../types/building";
 import { estimatePeakPower } from "../lib/pvgis";
+import { getDisplayCompany, getDisplayWebsite } from "../lib/leadAutoFill";
 
 type SortKey = "name" | "area" | "kwp" | "company" | "pipeline";
 
@@ -46,7 +47,7 @@ export default function TableView() {
       if (maxA > 0 && b.areaSqm > maxA) return false;
       if (filterKeyword) {
         const kw = filterKeyword.toLowerCase();
-        const hit = [b.name, b.operator, lead?.company].some((v) => v?.toLowerCase().includes(kw));
+        const hit = [b.name, b.operator, lead?.company, getDisplayCompany(b, lead)].some((v) => v?.toLowerCase().includes(kw));
         if (!hit) return false;
       }
       return true;
@@ -59,7 +60,7 @@ export default function TableView() {
         case "area":     va = a.areaSqm;    vb = b.areaSqm;    break;
         case "kwp":      va = la?.estimatedKwp ?? estimatePeakPower(a.areaSqm);
                          vb = lb?.estimatedKwp ?? estimatePeakPower(b.areaSqm); break;
-        case "company":  va = la?.company ?? ""; vb = lb?.company ?? ""; break;
+        case "company":  va = getDisplayCompany(a, la); vb = getDisplayCompany(b, lb); break;
         case "pipeline": va = la?.pipelineStage ?? ""; vb = lb?.pipelineStage ?? ""; break;
       }
       if (typeof va === "string") return sortDesc ? vb.toString().localeCompare(va.toString()) : va.toString().localeCompare(vb.toString());
@@ -135,9 +136,11 @@ export default function TableView() {
                     <span className="truncate block text-white font-medium">{name}</span>
                   </td>
 
-                  {/* Company */}
+                  {/* Company — OSM-aware display */}
                   <td className="px-4 py-2.5 max-w-[160px]">
-                    <span className="truncate block text-[#c8d0df]">{lead?.company ?? "—"}</span>
+                    <span className="truncate block text-[#c8d0df]" title={getDisplayCompany(b, lead)}>
+                      {getDisplayCompany(b, lead)}
+                    </span>
                   </td>
 
                   {/* Industry */}
@@ -180,22 +183,24 @@ export default function TableView() {
                     )}
                   </td>
 
-                  {/* Website */}
+                  {/* Website — OSM-aware display */}
                   <td className="px-4 py-2.5 max-w-[160px]">
-                    {lead?.website ? (
-                      <a
-                        href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-[#60a5fa] hover:text-[#93c5fd] truncate block"
-                        title={lead.website}
-                      >
-                        {lead.website.replace(/^https?:\/\//, "").slice(0, 28)}
-                      </a>
-                    ) : (
-                      <span className="text-[#2a2b3d]">—</span>
-                    )}
+                    {(() => {
+                      const w = getDisplayWebsite(b, lead);
+                      if (!w) return <span className="text-[#2a2b3d]">—</span>;
+                      return (
+                        <a
+                          href={w.startsWith("http") ? w : `https://${w}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[#60a5fa] hover:text-[#93c5fd] truncate block"
+                          title={w}
+                        >
+                          {w.replace(/^https?:\/\//, "").slice(0, 28)}
+                        </a>
+                      );
+                    })()}
                   </td>
 
                   {/* Direct Link */}
