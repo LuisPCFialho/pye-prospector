@@ -85,9 +85,9 @@ export default function LocationSummary() {
 
       {/* Tab buttons */}
       <div className="flex gap-1 px-3 pt-2.5 pb-1">
-        <TabBtn label="🚩 Flag"  active={tab === "flag"}  onClick={() => setTab("flag")} />
-        <TabBtn label="☀️ Solar" active={tab === "solar"} onClick={() => setTab("solar")} />
-        <TabBtn label="🗑 Drop"  active={tab === "drop"}  onClick={() => { setTab("drop"); setShowDropDialog(true); }} />
+        <TabBtn label="🚩 Flag"       active={tab === "flag"}  onClick={() => setTab("flag")} />
+        <TabBtn label="☀️ Solar"      active={tab === "solar"} onClick={() => setTab("solar")} />
+        <TabBtn label="👤 Individual" active={tab === "drop"}  onClick={() => { setTab("drop"); setShowDropDialog(true); }} />
       </div>
 
       {/* Body */}

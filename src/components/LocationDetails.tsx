@@ -5,7 +5,7 @@ import { saveLead, duplicateLead, getAllLeads } from "../db/database";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
 
-type Tab = "flag" | "solar" | "individual" | "notes" | "metadata";
+type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "streetview";
 
 export default function LocationDetails() {
   const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
@@ -86,11 +86,12 @@ export default function LocationDetails() {
   const density = building.areaSqm > 0 ? kwp / building.areaSqm : 0;
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "flag", label: "🚩 Lead" },
+    { key: "flag", label: "🚩 Flag" },
     { key: "solar", label: "☀️ Solar" },
-    { key: "individual", label: "🏢 Empresa" },
-    { key: "notes", label: "📝 Notas" },
-    { key: "metadata", label: "🔍 OSM" },
+    { key: "individual", label: "🏢 Individual" },
+    { key: "notes", label: "📝 Notes" },
+    { key: "metadata", label: "🔍 Get Metadata" },
+    { key: "streetview", label: "📷 Street View" },
   ];
 
   return (
@@ -286,6 +287,24 @@ export default function LocationDetails() {
                 >
                   Street View ↗
                 </button>
+              </div>
+            </div>
+          )}
+
+          {tab === "streetview" && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Vista de rua próxima do edifício (Mapillary). Abre o modal completo para navegação.
+              </p>
+              <button
+                type="button"
+                onClick={() => { setShowLocationDetails(false); setShowStreetView(true); }}
+                className="w-full py-2 rounded bg-brand-500 hover:bg-brand-400 text-slate-950 text-sm font-semibold"
+              >
+                📷 Abrir Street View
+              </button>
+              <div className="text-[10px] text-slate-500">
+                Coordenadas: {building.centroidLat.toFixed(5)}, {building.centroidLon.toFixed(5)}
               </div>
             </div>
           )}
