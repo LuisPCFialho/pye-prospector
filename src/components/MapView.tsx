@@ -164,13 +164,27 @@ export default function MapView() {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
-    map.on("load", () => {
-      addAppLayers(map);
+    // Re-add our sources/layers whenever the style changes.
+    // map.on("style.load") does NOT fire on setStyle() in MapLibre — only on
+    // initial map load. "styledata" fires after every style mutation; we guard
+    // with getSource() so we only act when our source is actually missing.
+    map.on("styledata", () => {
+      if (!map.getSource(BUILDINGS_SOURCE)) {
+        addAppLayers(map);
+        const geojson = buildingsToGeoJSON(
+          useAppStore.getState().buildings,
+          useAppStore.getState().leads,
+        );
+        const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+        if (src) src.setData(geojson);
+      }
+    });
 
+    map.on("load", () => {
       if (config.maptilerApiKey) {
         fetch(MAPTILER_STYLE(config.maptilerApiKey))
           .then((r) => { if (!r.ok) throw new Error(`MapTiler ${r.status}`); return r.json(); })
-          .then((style) => { map.setStyle(style); map.once("style.load", () => addAppLayers(map)); })
+          .then((style) => { map.setStyle(style); })
           .catch(() => {});
       }
     });
@@ -278,21 +292,16 @@ export default function MapView() {
     if (drawMode === "none") { clearDraw(map); drawCoordsRef.current = []; }
   }, [drawMode]);
 
-  // Re-render buildings when buildings OR leads change (color depends on leads)
+  // Re-render buildings when buildings OR leads change.
+  // The persistent map.on("style.load") handler re-adds the source and seeds data
+  // after any style switch, so here we only need to update existing data.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const geojson = buildingsToGeoJSON(buildings, leads);
-    const apply = () => {
-      const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
-      if (src) { src.setData(geojson); return true; }
-      return false;
-    };
-    // Check if source already exists (avoids isStyleLoaded() race where
-    // it returns false while tiles load but the source is already present)
-    if (!apply()) {
-      map.once("style.load", apply);
-    }
+    const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (src) src.setData(geojson);
+    // If src is absent the style is still loading — the style.load handler will seed it from store.
   }, [buildings, leads]);
 
   // Pan to selected
@@ -335,17 +344,12 @@ function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> })
     if (!map) return;
     if (satellite) {
       map.setStyle(OSM_STYLE);
-      map.once("style.load", () => addAppLayers(map));
       setSatellite(false);
     } else {
       if (!config.maptilerApiKey) return;
       fetch(MAPTILER_STYLE(config.maptilerApiKey))
         .then((r) => r.json())
-        .then((style) => {
-          map.setStyle(style);
-          map.once("style.load", () => addAppLayers(map));
-          setSatellite(true);
-        })
+        .then((style) => { map.setStyle(style); setSatellite(true); })
         .catch(() => {});
     }
   }
