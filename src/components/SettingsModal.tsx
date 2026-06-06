@@ -6,6 +6,7 @@ import { config } from "../config";
 export default function SettingsModal() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setBuildings = useAppStore((s) => s.setBuildings);
+  const selectBuilding = useAppStore((s) => s.selectBuilding);
   const notify = useAppStore((s) => s.notify);
 
   const [geminiKey, setGeminiKey] = useState(() => {
@@ -24,6 +25,7 @@ export default function SettingsModal() {
 
   function clearMapCache() {
     try { localStorage.removeItem("pye:mapview"); } catch { /* ignore */ }
+    selectBuilding(null); // clear ghost selection before removing buildings
     setBuildings([]);
     notify("Cache do mapa limpa (edifícios em memória removidos)", "info");
   }

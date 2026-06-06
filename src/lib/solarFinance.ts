@@ -43,9 +43,11 @@ export function computeSolarFinance(
   const usableKwh = annualKwh * SELF_CONSUMPTION_RATE;
   const annualSavingsEur = Math.round(usableKwh * electricityPrice);
 
+  // Infinity when there are no savings (e.g. annualKwh=0) — never report 0 (which
+  // would falsely read as "pays back immediately").
   const paybackYears = annualSavingsEur > 0
     ? Math.round((investmentEur / annualSavingsEur) * 10) / 10
-    : 0;
+    : Infinity;
 
   // Lifetime savings accounting for degradation, minus investment
   let lifetime = 0;

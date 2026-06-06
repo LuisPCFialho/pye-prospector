@@ -6,13 +6,25 @@ import { invoke } from "@tauri-apps/api/core";
  * bypasses all Tauri CSP and plugin-permission complexity.
  * Falls back to window.open() in the browser dev environment.
  */
-export async function openExternal(url: string): Promise<void> {
-  if (!url) return;
+/** Allow only http/https URLs; reject javascript:/file:/data: and malformed input. */
+function sanitizeUrl(raw: string): string | null {
   try {
-    await invoke("open_url", { url });
+    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+export async function openExternal(url: string): Promise<void> {
+  const safe = sanitizeUrl(url);
+  if (!safe) return;
+  try {
+    await invoke("open_url", { url: safe });
   } catch {
     // Browser context (dev server) — invoke doesn't exist, use window.open
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.open(safe, "_blank", "noopener,noreferrer");
   }
 }
 

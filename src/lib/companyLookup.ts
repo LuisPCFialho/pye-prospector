@@ -151,10 +151,12 @@ export async function findNearbyBusinesses(
 }
 
 /** Normalize a company name for dedup (strip legal suffixes, lowercase). */
-export function normalizeName(n: string): string {
+export function normalizeName(n: string | undefined | null): string {
+  if (!n) return "";
   return n
     .toLowerCase()
-    .replace(/\b(lda|s\.?a|unipessoal|sociedade|sa|s\.a\.)\b/g, "")
+    // strip Portuguese legal forms (longest/most specific first)
+    .replace(/\b(unipessoal\s+lda|sociedade\s+an[oó]nima|s\.a\.|lda\.?|s\.a|sa)\b/gi, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }

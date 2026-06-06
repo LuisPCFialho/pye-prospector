@@ -38,10 +38,21 @@ export async function saveBuilding(b: BuildingFeature): Promise<void> {
   );
 }
 
-export async function saveBuildingsBatch(buildings: BuildingFeature[]): Promise<void> {
+// Serializes batch writes so concurrent calls can't nest BEGIN TRANSACTION
+// (SQLite has no nested transactions — a second BEGIN would error and the
+// ROLLBACK would discard the first batch).
+let _batchLock: Promise<unknown> = Promise.resolve();
+
+export function saveBuildingsBatch(buildings: BuildingFeature[]): Promise<void> {
+  const run = _batchLock.then(() => _saveBuildingsBatch(buildings));
+  _batchLock = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function _saveBuildingsBatch(buildings: BuildingFeature[]): Promise<void> {
   if (buildings.length === 0) return;
   const db = await getDB();
-  // Wrap in a transaction: atomic + dramatically faster than N autocommits
+  // Use a SAVEPOINT (nestable) + transaction for atomicity and speed.
   try {
     await db.execute("BEGIN TRANSACTION");
     for (const b of buildings) {
@@ -143,15 +154,38 @@ function rowToLead(r: DBLead): Lead {
 
 export async function saveLead(lead: Lead): Promise<void> {
   const db = await getDB();
+  // True upsert: ON CONFLICT DO UPDATE never deletes the row, so created_at is
+  // preserved on existing leads (INSERT OR REPLACE would reset it).
   await db.execute(
-    `INSERT OR REPLACE INTO leads
+    `INSERT INTO leads
        (id, building_id, address, solar_status, pipeline_stage,
         estimated_kwh_per_year, estimated_kwp, monthly_kwh,
         company, telephone, website, email, notes, tags, owner,
         nif, building_use, has_existing_pv,
         flagged, drop_reason,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,  datetime('now'))`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(id) DO UPDATE SET
+        building_id = excluded.building_id,
+        address = excluded.address,
+        solar_status = excluded.solar_status,
+        pipeline_stage = excluded.pipeline_stage,
+        estimated_kwh_per_year = excluded.estimated_kwh_per_year,
+        estimated_kwp = excluded.estimated_kwp,
+        monthly_kwh = excluded.monthly_kwh,
+        company = excluded.company,
+        telephone = excluded.telephone,
+        website = excluded.website,
+        email = excluded.email,
+        notes = excluded.notes,
+        tags = excluded.tags,
+        owner = excluded.owner,
+        nif = excluded.nif,
+        building_use = excluded.building_use,
+        has_existing_pv = excluded.has_existing_pv,
+        flagged = excluded.flagged,
+        drop_reason = excluded.drop_reason,
+        updated_at = datetime('now')`,
     [
       lead.id, lead.buildingId, lead.address ?? null,
       lead.solarStatus, lead.pipelineStage,
@@ -162,8 +196,8 @@ export async function saveLead(lead: Lead): Promise<void> {
       lead.notes ?? null, lead.tags ?? null, lead.owner ?? null,
       lead.nif ?? null, lead.buildingUse ?? null,
       lead.hasExistingPv ?? null,
-      lead.flagged ? 1 : 0, lead.dropReason ?? null,
-      lead.createdAt,
+      lead.flagged === true ? 1 : 0, lead.dropReason ?? null,
+      lead.createdAt ?? new Date().toISOString(),
     ],
   );
 }
@@ -261,15 +295,22 @@ export async function exportLeadsCSV(): Promise<string> {
     "estimated_kwh_year","estimated_kwp","notes","updated_at",
   ].join(",");
 
+  // RFC 4180 quoting + formula-injection neutralization (prefix \t on = + - @).
+  const cell = (v: unknown): string => {
+    let s = v == null ? "" : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = `\t${s}`;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+
   const lines = rows.map((r) =>
     [
-      r.id, `"${r.address ?? ""}"`,
-      r.centroid_lat, r.centroid_lon, r.area_sqm, r.building_tag ?? "",
-      `"${r.company ?? ""}"`, `"${r.nif ?? ""}"`,
-      `"${r.telephone ?? ""}"`, `"${r.website ?? ""}"`, `"${r.email ?? ""}"`,
-      r.solar_status, r.pipeline_stage, r.flagged ? "sim" : "",
+      cell(r.id), cell(r.address),
+      r.centroid_lat, r.centroid_lon, r.area_sqm, cell(r.building_tag),
+      cell(r.company), cell(r.nif),
+      cell(r.telephone), cell(r.website), cell(r.email),
+      cell(r.solar_status), cell(r.pipeline_stage), r.flagged ? "sim" : "",
       r.estimated_kwh_per_year ?? "", r.estimated_kwp ?? "",
-      `"${(r.notes ?? "").replace(/"/g, "'")}"`, r.updated_at,
+      cell(r.notes), cell(r.updated_at),
     ].join(","),
   );
 

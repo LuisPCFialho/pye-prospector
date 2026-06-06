@@ -27,12 +27,16 @@ export default function MapSearch() {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const ctrlRef = useRef<AbortController | null>(null);
   const debouncedQuery = useDebounce(query, 350);
 
   const search = useCallback(async (q: string) => {
     if (q.trim().length < 2) { setResults([]); setOpen(false); return; }
-    setLoading(true);
+    // Cancel any in-flight request so a slow earlier response can't overwrite a newer one
+    ctrlRef.current?.abort();
     const ctrl = new AbortController();
+    ctrlRef.current = ctrl;
+    setLoading(true);
     const timer = setTimeout(() => ctrl.abort(), 8_000);
     try {
       const params = new URLSearchParams({
@@ -50,10 +54,10 @@ export default function MapSearch() {
       setResults(data);
       setOpen(data.length > 0);
     } catch {
-      setResults([]);
+      // aborted or network error — ignore (a newer search will set state)
     } finally {
       clearTimeout(timer);
-      setLoading(false);
+      if (ctrlRef.current === ctrl) setLoading(false);
     }
   }, []);
 

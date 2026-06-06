@@ -1,24 +1,40 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
+
+/// Only allow http/https URLs. Rejects javascript:/file:/data: and anything
+/// containing control characters or whitespace that could break argument passing.
+fn is_safe_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return false;
+    }
+    // Reject control chars and whitespace (newlines, tabs) that could enable injection.
+    !url.chars().any(|c| c.is_control() || c == '\n' || c == '\r')
+}
 
 #[tauri::command]
-fn open_url(url: String) {
+fn open_url(url: String) -> Result<(), String> {
+    if !is_safe_url(&url) {
+        return Err("URL não permitido (apenas http/https)".into());
+    }
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("cmd")
-            .args(["/c", "start", "", &url])
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW — avoids cmd flash
-            .spawn();
+        // rundll32 receives the URL as a single argument — no cmd.exe shell
+        // re-parsing, so '&' in Google Maps URLs is preserved and shell
+        // metacharacter injection is not possible.
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open").arg(&url).spawn();
+        std::process::Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+        std::process::Command::new("xdg-open").arg(&url).spawn().map_err(|e| e.to_string())?;
     }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

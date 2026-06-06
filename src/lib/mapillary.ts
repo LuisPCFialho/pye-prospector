@@ -21,9 +21,9 @@ export async function findNearestImage(lat: number, lon: number): Promise<string
   }
 }
 
-/** Embed URL for a Mapillary image key. */
+/** Embed URL for a Mapillary image key (encoded to prevent URL injection). */
 export function mapillaryEmbedUrl(imageKey: string): string {
-  return `https://www.mapillary.com/embed?image_key=${imageKey}&is_map=false`;
+  return `https://www.mapillary.com/embed?image_key=${encodeURIComponent(imageKey)}&is_map=false`;
 }
 
 /** Google Maps Street View deep-link (no API key needed). */

@@ -234,7 +234,7 @@ export default function LocationDetails() {
                     <div className="grid grid-cols-3 gap-3">
                       <ROField label="Investimento" value={formatEur(fin.investmentEur)} />
                       <ROField label="Poupança/ano" value={formatEur(fin.annualSavingsEur)} accent />
-                      <ROField label="Payback" value={`${fin.paybackYears} anos`} accent />
+                      <ROField label="Payback" value={Number.isFinite(fin.paybackYears) ? `${fin.paybackYears} anos` : "—"} accent />
                       <ROField label="Poupança 25 anos" value={formatEur(fin.lifetimeSavingsEur)} accent />
                       <ROField label="CO₂ evitado/ano" value={`${fin.co2TonnesPerYear} t`} />
                       <ROField label="Autoconsumo" value="~75%" />

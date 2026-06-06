@@ -71,6 +71,7 @@ export function validateField(
     case "nif": {
       const digits = trimmed.replace(/\D/g, "");
       if (!/^\d{9}$/.test(digits)) return { error: "NIF deve ter 9 dígitos" };
+      if (!isValidNif(digits)) return { error: "NIF inválido (dígito de controlo errado)" };
       return { value: digits };
     }
     case "email":

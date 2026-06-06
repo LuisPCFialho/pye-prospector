@@ -96,12 +96,14 @@ function closeRing(g: OverpassGeom[]): [number, number][] {
 
 /** Build a turf polygon/multipolygon from a relation's outer/inner members. */
 function relationToGeometry(el: OverpassElement): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
-  const outers = (el.members ?? [])
-    .filter((m) => m.role === "outer" && (m.geometry?.length ?? 0) >= 3)
-    .map((m) => closeRing(m.geometry!));
-  const inners = (el.members ?? [])
-    .filter((m) => m.role === "inner" && (m.geometry?.length ?? 0) >= 3)
-    .map((m) => closeRing(m.geometry!));
+  // closeRing first, then require >= 4 positions (turf needs 3 unique + closing point).
+  const ringsFor = (role: string) =>
+    (el.members ?? [])
+      .filter((m) => m.role === role && (m.geometry?.length ?? 0) >= 3)
+      .map((m) => closeRing(m.geometry!))
+      .filter((r) => r.length >= 4);
+  const outers = ringsFor("outer");
+  const inners = ringsFor("inner");
   if (outers.length === 0) return null;
   try {
     if (outers.length === 1) {
@@ -211,9 +213,15 @@ async function fetchTile(bbox: BBox): Promise<BuildingFeature[]> {
         continue;
       }
 
-      let data: { elements: OverpassElement[] };
-      try { data = JSON.parse(text) as { elements: OverpassElement[] }; }
+      let data: { elements: OverpassElement[]; remark?: string };
+      try { data = JSON.parse(text) as { elements: OverpassElement[]; remark?: string }; }
       catch { errors.push(`${mirror}: JSON inválido`); continue; }
+
+      // Overpass sets `remark` when a query is truncated (out of memory/timeout).
+      if (data.remark && /error|memory|timeout/i.test(data.remark)) {
+        errors.push(`${mirror}: ${data.remark.slice(0, 100)}`);
+        continue;
+      }
 
       const elements = data.elements ?? [];
 
@@ -222,12 +230,14 @@ async function fetchTile(bbox: BBox): Promise<BuildingFeature[]> {
       const buildingEls: OverpassElement[] = [];
       for (const el of elements) {
         if (el.tags?.landuse && el.type === "way" && (el.geometry?.length ?? 0) >= 3) {
+          const ring = closeRing(el.geometry!);
+          if (ring.length < 4) continue;
           try {
             landusePolys.push({
-              poly: turf.polygon([closeRing(el.geometry!)]),
+              poly: turf.polygon([ring]),
               type: el.tags.landuse,
             });
-          } catch { /* skip */ }
+          } catch { /* skip degenerate */ }
         } else if (el.tags?.building) {
           buildingEls.push(el);
         }
@@ -285,9 +295,17 @@ export function buildingsToGeoJSON(
         type: "Feature" as const,
         // Stable numeric id for feature-state; hash the string id to avoid way/relation collisions
         id: hashId(b.id),
+        // Only the properties the map actually needs — NOT rawTags (can be KBs each,
+        // which would bloat the structured-clone postMessage to MapLibre's worker).
         properties: {
-          ...b,
-          geometryGeoJSON: undefined,
+          id: b.id,
+          osmId: b.osmId ?? null,
+          osmType: b.osmType ?? null,
+          name: b.name ?? null,
+          operator: b.operator ?? null,
+          areaSqm: b.areaSqm,
+          inferredUse: b.inferredUse ?? null,
+          ciScore: b.ciScore ?? null,
           fillColor: color,
           solarStatus: lead?.solarStatus ?? "unknown",
           pipelineStage: lead?.pipelineStage ?? "to_contact",

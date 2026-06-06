@@ -42,7 +42,10 @@ function addAppLayers(map: maplibregl.Map) {
   map.addSource(BUILDINGS_SOURCE, {
     type: "geojson",
     data: existingData,
-    generateId: true,
+    // NOT generateId — buildingsToGeoJSON assigns a STABLE hashId per building so
+    // feature-state (selected highlight) survives setData() calls. generateId would
+    // reassign ephemeral ids on every setData and orphan the selection.
+    promoteId: undefined,
   });
 
   // Fill — color driven by feature property 'fillColor', cyan when selected
@@ -280,14 +283,14 @@ export default function MapView() {
     [addBuildings, setLeads, setDrawMode, setLoadingBuildings, notify],
   );
 
-  // ESC to cancel draw
+  // ESC to cancel draw — only acts when draw mode is actually active
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && mapRef.current) {
-        clearDraw(mapRef.current);
-        setDrawMode("none");
-        mapRef.current.getCanvas().style.cursor = "";
-      }
+      if (e.key !== "Escape" || !mapRef.current) return;
+      if (useAppStore.getState().drawMode !== "polygon") return;
+      clearDraw(mapRef.current);
+      setDrawMode("none");
+      mapRef.current.getCanvas().style.cursor = "";
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

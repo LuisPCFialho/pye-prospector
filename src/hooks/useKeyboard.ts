@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /** Calls onEscape when the Escape key is pressed (while enabled). */
 export function useEscapeKey(onEscape: () => void, enabled = true) {
@@ -29,14 +29,18 @@ export interface ShortcutMap {
  * Keys are matched case-insensitively against e.key.
  */
 export function useGlobalShortcuts(shortcuts: ShortcutMap, enabled = true) {
+  // Keep a stable ref so the listener isn't re-registered on every render
+  // (callers pass an inline object literal each render).
+  const ref = useRef(shortcuts);
+  ref.current = shortcuts;
   useEffect(() => {
     if (!enabled) return;
     function handler(e: KeyboardEvent) {
       if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
-      const fn = shortcuts[e.key.toLowerCase()];
+      const fn = ref.current[e.key.toLowerCase()];
       if (fn) { e.preventDefault(); fn(); }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [shortcuts, enabled]);
+  }, [enabled]);
 }
