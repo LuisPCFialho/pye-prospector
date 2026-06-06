@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { useAppStore } from "./store/appStore";
 import {
   getAllBuildings, getAllLeads, getAllNotes,
@@ -6,13 +6,15 @@ import {
 import MapView from "./components/MapView";
 import Sidebar from "./components/Sidebar";
 import LocationSummary from "./components/LocationSummary";
-import LocationDetails from "./components/LocationDetails";
-import StreetViewModal from "./components/StreetViewModal";
-import TableView from "./components/TableView";
-import SearchFilter from "./components/SearchFilter";
 import MapSearch from "./components/MapSearch";
-import DropLocationDialog from "./components/DropLocationDialog";
 import ToastContainer from "./components/ToastContainer";
+
+// Code-split heavy / conditionally-rendered views to shrink the initial bundle
+const LocationDetails   = lazy(() => import("./components/LocationDetails"));
+const StreetViewModal   = lazy(() => import("./components/StreetViewModal"));
+const TableView         = lazy(() => import("./components/TableView"));
+const SearchFilter      = lazy(() => import("./components/SearchFilter"));
+const DropLocationDialog = lazy(() => import("./components/DropLocationDialog"));
 
 export default function App() {
   const viewMode            = useAppStore((s) => s.viewMode);
@@ -63,13 +65,19 @@ export default function App() {
           <MapView />
           <MapSearch />
           <LocationSummary />
-          {showSearchFilter && <SearchFilter />}
-          {showLocationDetails && <LocationDetails />}
-          {showStreetView && <StreetViewModal />}
-          {showDropDialog && <DropLocationDialog />}
+          <Suspense fallback={null}>
+            {showSearchFilter && <SearchFilter />}
+            {showLocationDetails && <LocationDetails />}
+            {showStreetView && <StreetViewModal />}
+            {showDropDialog && <DropLocationDialog />}
+          </Suspense>
         </div>
 
-        {viewMode === "table" && <TableView />}
+        {viewMode === "table" && (
+          <Suspense fallback={<div className="flex items-center justify-center h-full text-[#8892a4] text-sm">A carregar tabela…</div>}>
+            <TableView />
+          </Suspense>
+        )}
 
         {successMessage && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50 bg-green-900/95 border border-green-700 text-green-100 text-xs px-4 py-2 rounded-lg shadow-xl pointer-events-none">

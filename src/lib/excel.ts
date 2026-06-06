@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import type { BuildingFeature, Lead, LeadNote } from "../types/building";
 import { SOLAR_STATUS_LABELS, PIPELINE_LABELS } from "../types/building";
 import { getDisplayCompany, getDisplayWebsite, getDisplayPhone, pickEmail, pickNIF, pickAddress } from "./leadAutoFill";
@@ -9,7 +8,9 @@ interface ExportData {
   notes?: Record<string, LeadNote[]>;
 }
 
-export function exportToExcel(data: ExportData): void {
+/** Exports leads + notes to an .xlsx file. xlsx (~280KB) is loaded on demand. */
+export async function exportToExcel(data: ExportData): Promise<void> {
+  const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
 
   // Sheet 1 — Leads

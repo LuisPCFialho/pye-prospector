@@ -1,5 +1,8 @@
 import { config } from "../config";
-import { timedFetch } from "./fetchUtils";
+import { timedFetch, createRateLimiter } from "./fetchUtils";
+
+// Nominatim public instance allows ~1 req/sec — serialize all calls.
+const nominatimLimiter = createRateLimiter(1100);
 
 export interface ReverseGeocodeResult {
   displayName: string;
@@ -49,11 +52,13 @@ export async function reverseGeocode(lat: number, lon: number): Promise<ReverseG
 
   let res: Response;
   try {
-    res = await timedFetch(`${config.nominatimUrl}/reverse?${params.toString()}`, {
-      headers: { "Accept-Language": "pt-PT,pt;q=0.9" },
-      timeoutMs: 8_000,
-      retries: 1,
-    });
+    res = await nominatimLimiter(() =>
+      timedFetch(`${config.nominatimUrl}/reverse?${params.toString()}`, {
+        headers: { "Accept-Language": "pt-PT,pt;q=0.9" },
+        timeoutMs: 8_000,
+        retries: 1,
+      }),
+    );
   } catch {
     return null;
   }

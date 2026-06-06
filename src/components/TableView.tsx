@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ArrowUpDown, ExternalLink, Sun, Flag, X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { exportLeadsCSV } from "../db/database";
@@ -38,8 +38,8 @@ export default function TableView() {
     }
   }
 
-  // buildings already filtered by useFilteredBuildings hook
-  const rows = buildings
+  // buildings already filtered by useFilteredBuildings hook; memoize the sort
+  const rows = useMemo(() => buildings
     .slice()
     .sort((a, b) => {
       const la = leads[a.id], lb = leads[b.id];
@@ -54,7 +54,7 @@ export default function TableView() {
       }
       if (typeof va === "string") return sortDesc ? vb.toString().localeCompare(va.toString()) : va.toString().localeCompare(vb.toString());
       return sortDesc ? (vb as number) - (va as number) : (va as number) - (vb as number);
-    });
+    }), [buildings, leads, sortKey, sortDesc]);
 
   const Th = ({ label, k }: { label: string; k?: SortKey }) => (
     <th

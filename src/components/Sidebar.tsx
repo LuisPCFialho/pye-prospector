@@ -80,13 +80,13 @@ export default function Sidebar() {
     }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     if (buildings.length === 0) {
       notify("Sem edifícios para exportar. Usa 'Get Rooftops' primeiro.", "warning");
       return;
     }
     try {
-      exportToExcel({ buildings, leads, notes });
+      await exportToExcel({ buildings, leads, notes });
       notify(`Excel exportado (${buildings.length} edifícios)`, "success");
     } catch (e) {
       notify(`Erro ao exportar Excel: ${e instanceof Error ? e.message : "desconhecido"}`, "error");

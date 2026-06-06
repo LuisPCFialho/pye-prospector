@@ -79,3 +79,23 @@ export function errorMessage(e: unknown): string {
 export function isOnline(): boolean {
   return typeof navigator !== "undefined" ? navigator.onLine : true;
 }
+
+/**
+ * Serializes calls through a single queue with a minimum interval between them.
+ * Used to respect rate-limited public APIs (e.g. Nominatim = 1 req/sec).
+ */
+export function createRateLimiter(minIntervalMs: number) {
+  let last = 0;
+  let chain: Promise<unknown> = Promise.resolve();
+  return function run<T>(fn: () => Promise<T>): Promise<T> {
+    const result = chain.then(async () => {
+      const wait = Math.max(0, minIntervalMs - (performance.now() - last));
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      last = performance.now();
+      return fn();
+    });
+    // Keep the chain alive even if a call rejects
+    chain = result.then(() => undefined, () => undefined);
+    return result;
+  };
+}

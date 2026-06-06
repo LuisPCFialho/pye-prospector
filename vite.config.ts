@@ -26,5 +26,16 @@ export default defineConfig({
     target: "chrome105",
     minify: "esbuild" as const,
     sourcemap: false,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          maplibre: ["maplibre-gl"],
+          turf: ["@turf/turf"],
+          xlsx: ["xlsx"],
+          react: ["react", "react-dom", "zustand"],
+        },
+      },
+    },
   },
 });
