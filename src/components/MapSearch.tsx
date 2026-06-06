@@ -89,11 +89,12 @@ export default function MapSearch() {
         <input
           ref={inputRef}
           type="text"
+          aria-label="Pesquisar localização"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder="Pesquisar cidade, empresa, morada…"
+          placeholder="Pesquisar cidade, empresa, morada…  ( / )"
           className="flex-1 bg-transparent px-3 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
         />
         {loading && <span className="pr-3 text-slate-500 text-xs animate-pulse">…</span>}

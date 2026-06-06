@@ -85,8 +85,17 @@ export default function SearchFilter() {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40">
-      <div className="w-[460px] max-h-[90vh] bg-[#13131f] border border-[#1e1f30] rounded-xl shadow-2xl overflow-hidden flex flex-col">
+    <div
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/40"
+      onClick={() => setShowSearchFilter(false)}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Filtros de pesquisa"
+        className="w-[460px] max-h-[90vh] bg-[#13131f] border border-[#1e1f30] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1f30]">
           <div className="flex items-center gap-3">

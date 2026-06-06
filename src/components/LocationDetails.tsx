@@ -100,8 +100,17 @@ export default function LocationDetails() {
   ];
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
-      <div className="w-[760px] max-h-[92vh] bg-[#1a1a2e] border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+    <div
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/60"
+      onClick={() => setShowLocationDetails(false)}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detalhes da localização"
+        className="w-[760px] max-h-[92vh] bg-[#1a1a2e] border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-5 py-3 bg-[#12121e] border-b border-slate-700 shrink-0">
           <div className="flex items-center gap-3">
             <span className="font-semibold">Location Details</span>
@@ -119,16 +128,19 @@ export default function LocationDetails() {
             )}
             <button
               type="button"
+              aria-label="Fechar"
               onClick={() => setShowLocationDetails(false)}
               className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center"
             >×</button>
           </div>
         </div>
 
-        <div className="flex border-b border-slate-700 shrink-0 overflow-x-auto">
+        <div role="tablist" className="flex border-b border-slate-700 shrink-0 overflow-x-auto">
           {tabs.map((t) => (
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === t.key ? "true" : "false"}
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`px-4 py-2.5 text-xs font-medium transition whitespace-nowrap ${

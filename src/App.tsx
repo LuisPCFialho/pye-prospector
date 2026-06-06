@@ -8,6 +8,7 @@ import Sidebar from "./components/Sidebar";
 import LocationSummary from "./components/LocationSummary";
 import MapSearch from "./components/MapSearch";
 import ToastContainer from "./components/ToastContainer";
+import { useGlobalShortcuts } from "./hooks/useKeyboard";
 
 // Code-split heavy / conditionally-rendered views to shrink the initial bundle
 const LocationDetails   = lazy(() => import("./components/LocationDetails"));
@@ -27,8 +28,31 @@ export default function App() {
   const setBuildings = useAppStore((s) => s.setBuildings);
   const setLeads     = useAppStore((s) => s.setLeads);
   const setNotes     = useAppStore((s) => s.setNotes);
+  const setViewMode  = useAppStore((s) => s.setViewMode);
+  const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
+  const selectBuilding = useAppStore((s) => s.selectBuilding);
+  const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
+  const setShowStreetView = useAppStore((s) => s.setShowStreetView);
 
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+
+  // Global keyboard shortcuts
+  useGlobalShortcuts({
+    t: () => setViewMode("table"),
+    m: () => setViewMode("map"),
+    f: () => { setViewMode("map"); setShowSearchFilter(!useAppStore.getState().showSearchFilter); },
+    "/": () => {
+      setViewMode("map");
+      document.querySelector<HTMLInputElement>('input[aria-label="Pesquisar localização"]')?.focus();
+    },
+    escape: () => {
+      const s = useAppStore.getState();
+      if (s.showLocationDetails) setShowLocationDetails(false);
+      else if (s.showStreetView) setShowStreetView(false);
+      else if (s.showSearchFilter) setShowSearchFilter(false);
+      else if (s.selectedBuildingId) selectBuilding(null);
+    },
+  });
 
   useEffect(() => {
     getAllBuildings()
