@@ -61,7 +61,12 @@ Responde APENAS com JSON válido no formato:
       const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) continue;
-      const parsed = JSON.parse(jsonMatch[0]) as CompanyInfo;
+      let parsed: CompanyInfo;
+      try {
+        parsed = JSON.parse(jsonMatch[0]) as CompanyInfo;
+      } catch {
+        continue;
+      }
       if (!parsed.name && parsed.confidence === "low") return null;
       return parsed;
     } catch {
@@ -110,18 +115,26 @@ async function callGemini(req: AIRequest): Promise<string> {
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-        }),
-      });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20_000);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+          }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
 
       if (res.status === 429 || res.status === 404) {
         lastError = `${model} → ${res.status}`;
-        continue; // try next model
+        continue;
       }
       if (!res.ok) {
         lastError = `${model} → HTTP ${res.status}`;

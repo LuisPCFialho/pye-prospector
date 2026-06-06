@@ -1,13 +1,13 @@
-import { useEffect, useRef, useCallback, useState, type RefObject } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
-import { Layers, Maximize2 } from "lucide-react";
+import { Layers, Maximize2, Filter } from "lucide-react";
 import { config } from "../config";
 import { setMapInstance } from "../lib/mapInstance";
 import { useAppStore } from "../store/appStore";
 import { buildingsToGeoJSON } from "../lib/overpass";
 import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
-import { estimatePeakPower } from "../lib/pvgis";
+import { useFilteredBuildings, useIsFilterActive } from "../hooks/useFilteredBuildings";
 import * as turf from "@turf/turf";
 
 const OSM_STYLE: maplibregl.StyleSpecification = {
@@ -112,27 +112,22 @@ export default function MapView() {
   const selectedIdRef = useRef<number | string | null>(null);
   const drawCoordsRef = useRef<[number, number][]>([]);
 
-  const buildings             = useAppStore((s) => s.buildings);
-  const leads                 = useAppStore((s) => s.leads);
-  const drawMode              = useAppStore((s) => s.drawMode);
-  const selectedBuildingId    = useAppStore((s) => s.selectedBuildingId);
-  const loadError             = useAppStore((s) => s.loadError);
-  const filterSolarStatus     = useAppStore((s) => s.filterSolarStatus);
-  const filterPipelineStage   = useAppStore((s) => s.filterPipelineStage);
-  const filterMinAreaSqm      = useAppStore((s) => s.filterMinAreaSqm);
-  const filterMaxAreaSqm      = useAppStore((s) => s.filterMaxAreaSqm);
-  const filterKeyword         = useAppStore((s) => s.filterKeyword);
-  const filterOnlyFlagged     = useAppStore((s) => s.filterOnlyFlagged);
-  const filterOnlyDropped     = useAppStore((s) => s.filterOnlyDropped);
-  const filterExcludeDropped  = useAppStore((s) => s.filterExcludeDropped);
-  const filterMinKwp          = useAppStore((s) => s.filterMinKwp);
-  const filterMaxKwp          = useAppStore((s) => s.filterMaxKwp);
+  const leads               = useAppStore((s) => s.leads);
+  const drawMode            = useAppStore((s) => s.drawMode);
+  const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
+  const loadError           = useAppStore((s) => s.loadError);
   const selectBuilding      = useAppStore((s) => s.selectBuilding);
   const addBuildings        = useAppStore((s) => s.addBuildings);
   const setLeads            = useAppStore((s) => s.setLeads);
   const setDrawMode         = useAppStore((s) => s.setDrawMode);
   const setLoadingBuildings = useAppStore((s) => s.setLoadingBuildings);
   const setLoadError        = useAppStore((s) => s.setLoadError);
+  const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
+
+  // Filtered buildings from shared hook (memoized, single source of truth)
+  const visibleBuildings = useFilteredBuildings();
+  const isFilterActive   = useIsFilterActive();
+  const totalBuildings   = useAppStore((s) => s.buildings.length);
 
   // Init map
   useEffect(() => {
@@ -160,17 +155,19 @@ export default function MapView() {
       attributionControl: false,
     });
 
-    // Persist view changes (debounced)
+    // Persist view changes (debounced) — timer cleared on unmount to prevent stale writes
     let saveTimer: ReturnType<typeof setTimeout> | null = null;
-    map.on("moveend", () => {
+    const onMoveEnd = () => {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         const c = map.getCenter();
         try {
           localStorage.setItem("pye:mapview", JSON.stringify({ lon: c.lng, lat: c.lat, zoom: map.getZoom() }));
-        } catch { /* quota */ }
+        } catch { /* quota exceeded */ }
+        saveTimer = null;
       }, 500);
-    });
+    };
+    map.on("moveend", onMoveEnd);
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
@@ -203,7 +200,11 @@ export default function MapView() {
     setMapInstance(map);
     mapRef.current = map;
 
-    return () => { map.remove(); mapRef.current = null; };
+    return () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      map.remove();
+      mapRef.current = null;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Click handler
@@ -303,43 +304,18 @@ export default function MapView() {
     if (drawMode === "none") { clearDraw(map); drawCoordsRef.current = []; }
   }, [drawMode]);
 
-  // Re-render buildings when buildings, leads, or active filters change.
-  // Filtered-out buildings are hidden from the map immediately.
+  // Re-render buildings whenever visibleBuildings or lead colors change.
+  // visibleBuildings already memoized by useFilteredBuildings hook.
+  const geojson = useMemo(
+    () => buildingsToGeoJSON(visibleBuildings, leads),
+    [visibleBuildings, leads],
+  );
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    const visibleBuildings = buildings.filter((b) => {
-      const lead = leads[b.id];
-      if (filterSolarStatus !== "all" && lead?.solarStatus !== filterSolarStatus) return false;
-      if (filterPipelineStage !== "all" && lead?.pipelineStage !== filterPipelineStage) return false;
-      if (filterMinAreaSqm > 0 && b.areaSqm < filterMinAreaSqm) return false;
-      if (filterMaxAreaSqm > 0 && b.areaSqm > filterMaxAreaSqm) return false;
-      if (filterKeyword) {
-        const kw = filterKeyword.toLowerCase();
-        const hit = [b.name, b.operator, lead?.company].some((v) => v?.toLowerCase().includes(kw));
-        if (!hit) return false;
-      }
-      if (filterOnlyFlagged && !lead?.flagged) return false;
-      if (filterOnlyDropped && lead?.pipelineStage !== "lost") return false;
-      if (filterExcludeDropped && lead?.pipelineStage === "lost") return false;
-      if (filterMinKwp > 0 || filterMaxKwp > 0) {
-        const kwp = lead?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
-        if (filterMinKwp > 0 && kwp < filterMinKwp) return false;
-        if (filterMaxKwp > 0 && kwp > filterMaxKwp) return false;
-      }
-      return true;
-    });
-
-    const geojson = buildingsToGeoJSON(visibleBuildings, leads);
     const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (src) src.setData(geojson);
-  }, [
-    buildings, leads,
-    filterSolarStatus, filterPipelineStage, filterMinAreaSqm, filterMaxAreaSqm,
-    filterMinKwp, filterMaxKwp,
-    filterKeyword, filterOnlyFlagged, filterOnlyDropped, filterExcludeDropped,
-  ]);
+  }, [geojson]);
 
   // Pan to selected
   useEffect(() => {
@@ -363,8 +339,21 @@ export default function MapView() {
 
       {drawMode === "polygon" && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-[#f97316]/95 text-white text-xs font-semibold px-5 py-2 rounded-full shadow-lg pointer-events-none">
-          Click to add points · Double-click to finish · ESC to cancel
+          Click para adicionar pontos · Double-click para terminar · ESC para cancelar
         </div>
+      )}
+
+      {/* Filter-active badge: shows how many buildings are hidden */}
+      {isFilterActive && totalBuildings > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowSearchFilter(true)}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-[#f97316]/90 hover:bg-[#f97316] text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg transition-colors"
+          title="Filtro activo — clica para editar"
+        >
+          <Filter size={11} />
+          {visibleBuildings.length}/{totalBuildings} edifícios visíveis
+        </button>
       )}
 
       <BottomToolbar mapRef={mapRef} />

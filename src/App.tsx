@@ -28,9 +28,15 @@ export default function App() {
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
 
   useEffect(() => {
-    getAllBuildings().then(setBuildings).catch(() => {});
-    getAllLeads().then(setLeads).catch(() => {});
-    getAllNotes().then(setNotes).catch(() => {});
+    getAllBuildings()
+      .then(setBuildings)
+      .catch(() => { /* DB not available in browser — silently skip */ });
+    getAllLeads()
+      .then(setLeads)
+      .catch(() => {});
+    getAllNotes()
+      .then(setNotes)
+      .catch(() => {});
     const onUp   = () => setOnline(true);
     const onDown = () => setOnline(false);
     window.addEventListener("online", onUp);

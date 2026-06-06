@@ -34,19 +34,12 @@ out geom tags;`;
 async function tryMirror(url: string, query: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 28_000);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    return res;
-  } catch (e) {
-    clearTimeout(timer);
-    throw e;
-  }
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `data=${encodeURIComponent(query)}`,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
 }
 
 function elementToBuilding(el: OverpassElement): BuildingFeature | null {
@@ -104,8 +97,14 @@ export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[
         continue;
       }
 
-      const data = JSON.parse(text) as { elements: OverpassElement[] };
-      return data.elements
+      let data: { elements: OverpassElement[] };
+      try {
+        data = JSON.parse(text) as { elements: OverpassElement[] };
+      } catch {
+        errors.push(`${mirror}: JSON inválido`);
+        continue;
+      }
+      return (data.elements ?? [])
         .map(elementToBuilding)
         .filter((b): b is BuildingFeature => b !== null);
     } catch (e) {

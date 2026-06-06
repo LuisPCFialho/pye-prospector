@@ -36,6 +36,12 @@ pub fn run() {
             sql: include_str!("../migrations/0002_scoring_notes_tasks.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "missing_fields_flagged_dropreason_email",
+            sql: include_str!("../migrations/0003_missing_fields.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

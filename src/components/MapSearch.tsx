@@ -32,22 +32,27 @@ export default function MapSearch() {
   const search = useCallback(async (q: string) => {
     if (q.trim().length < 2) { setResults([]); setOpen(false); return; }
     setLoading(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8_000);
     try {
       const params = new URLSearchParams({
-        q, format: "json", limit: "6",
+        q, format: "json", limit: "8",
         addressdetails: "0",
         "accept-language": "pt",
+        countrycodes: "pt",
       });
       const res = await fetch(`${config.nominatimUrl}/search?${params}`, {
         headers: { "User-Agent": config.userAgent },
+        signal: ctrl.signal,
       });
-      if (!res.ok) return;
+      if (!res.ok) { setResults([]); return; }
       const data: NominatimResult[] = await res.json();
       setResults(data);
       setOpen(data.length > 0);
     } catch {
       setResults([]);
     } finally {
+      clearTimeout(timer);
       setLoading(false);
     }
   }, []);

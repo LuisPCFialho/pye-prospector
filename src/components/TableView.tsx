@@ -5,18 +5,15 @@ import { exportLeadsCSV } from "../db/database";
 import { SOLAR_STATUS_COLORS, PIPELINE_COLORS } from "../types/building";
 import { estimatePeakPower } from "../lib/pvgis";
 import { getDisplayCompany, getDisplayWebsite } from "../lib/leadAutoFill";
+import { useFilteredBuildings } from "../hooks/useFilteredBuildings";
 
 type SortKey = "name" | "area" | "kwp" | "company" | "pipeline";
 
 export default function TableView() {
-  const buildings         = useAppStore((s) => s.buildings);
-  const leads             = useAppStore((s) => s.leads);
-  const filterSolarStatus = useAppStore((s) => s.filterSolarStatus);
-  const filterMinAreaSqm  = useAppStore((s) => s.filterMinAreaSqm);
-  const filterMaxAreaSqm  = useAppStore((s) => s.filterMaxAreaSqm);
-  const filterKeyword     = useAppStore((s) => s.filterKeyword);
-  const selectBuilding    = useAppStore((s) => s.selectBuilding);
-  const setViewMode       = useAppStore((s) => s.setViewMode);
+  const leads          = useAppStore((s) => s.leads);
+  const selectBuilding = useAppStore((s) => s.selectBuilding);
+  const setViewMode    = useAppStore((s) => s.setViewMode);
+  const buildings      = useFilteredBuildings();
 
   const [sortKey, setSortKey]   = useState<SortKey>("area");
   const [sortDesc, setSortDesc] = useState(true);
@@ -37,21 +34,9 @@ export default function TableView() {
     } catch { /* ignore */ }
   }
 
+  // buildings already filtered by useFilteredBuildings hook
   const rows = buildings
-    .filter((b) => {
-      const lead = leads[b.id];
-      if (filterSolarStatus !== "all" && lead?.solarStatus !== filterSolarStatus) return false;
-      const minA = filterMinAreaSqm || 0;
-      if (minA > 0 && b.areaSqm < minA) return false;
-      const maxA = filterMaxAreaSqm || 0;
-      if (maxA > 0 && b.areaSqm > maxA) return false;
-      if (filterKeyword) {
-        const kw = filterKeyword.toLowerCase();
-        const hit = [b.name, b.operator, lead?.company, getDisplayCompany(b, lead)].some((v) => v?.toLowerCase().includes(kw));
-        if (!hit) return false;
-      }
-      return true;
-    })
+    .slice()
     .sort((a, b) => {
       const la = leads[a.id], lb = leads[b.id];
       let va: string | number = 0, vb: string | number = 0;

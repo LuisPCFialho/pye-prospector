@@ -58,8 +58,7 @@ export async function fetchPVGIS(input: PVGISInput): Promise<PVGISResult> {
     const url = `${PVGIS_BASE}/PVcalc?${params.toString()}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
+    const res = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
 
     if (!res.ok) throw new Error(`PVGIS ${res.status}`);
     const data = await res.json();

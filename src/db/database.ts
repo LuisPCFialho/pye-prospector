@@ -1,5 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
-import type { BuildingFeature, Lead, LeadNote } from "../types/building";
+import type { BuildingFeature, Lead, LeadNote, SolarStatus, PipelineStage, BuildingUse, DropReason } from "../types/building";
 
 type DB = Awaited<ReturnType<typeof Database.load>>;
 let _db: DB | null = null;
@@ -8,6 +8,16 @@ async function getDB(): Promise<DB> {
   if (!_db) _db = await Database.load("sqlite:pye_prospector.db");
   return _db;
 }
+
+function safeJsonParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; }
+  catch { return fallback; }
+}
+
+const VALID_SOLAR: ReadonlySet<string> = new Set(["unknown","no_panels","has_panels","partial","inconclusive"]);
+const VALID_PIPELINE: ReadonlySet<string> = new Set(["to_contact","contacted","meeting","proposal","won","lost"]);
+const VALID_USE: ReadonlySet<string> = new Set(["food_beverage","metalwork","logistics","retail","hotels","agriculture","office","other"]);
 
 // ── Buildings ────────────────────────────────────────────────────────────────
 
@@ -29,7 +39,28 @@ export async function saveBuilding(b: BuildingFeature): Promise<void> {
 }
 
 export async function saveBuildingsBatch(buildings: BuildingFeature[]): Promise<void> {
-  for (const b of buildings) await saveBuilding(b);
+  if (buildings.length === 0) return;
+  const db = await getDB();
+  // Process in chunks of 50 to avoid hitting SQLite parameter limits
+  const CHUNK = 50;
+  for (let i = 0; i < buildings.length; i += CHUNK) {
+    const chunk = buildings.slice(i, i + CHUNK);
+    for (const b of chunk) {
+      await db.execute(
+        `INSERT OR IGNORE INTO buildings
+           (id, osm_id, source, geometry, centroid_lon, centroid_lat,
+            area_sqm, building_tag, name, operator, raw_tags)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          b.id, b.osmId ?? null, b.source,
+          JSON.stringify(b.geometryGeoJSON),
+          b.centroidLon, b.centroidLat, b.areaSqm,
+          b.buildingTag ?? null, b.name ?? null, b.operator ?? null,
+          JSON.stringify(b.rawTags ?? {}),
+        ],
+      );
+    }
+  }
 }
 
 interface DBBuilding {
@@ -39,22 +70,30 @@ interface DBBuilding {
   name: string | null; operator: string | null; raw_tags: string;
 }
 
-function rowToBuilding(r: DBBuilding): BuildingFeature {
-  return {
-    id: r.id, osmId: r.osm_id ?? undefined,
-    source: r.source as BuildingFeature["source"],
-    geometryGeoJSON: JSON.parse(r.geometry),
-    centroidLon: r.centroid_lon, centroidLat: r.centroid_lat,
-    areaSqm: r.area_sqm, buildingTag: r.building_tag ?? undefined,
-    name: r.name ?? undefined, operator: r.operator ?? undefined,
-    rawTags: JSON.parse(r.raw_tags),
-  };
+function rowToBuilding(r: DBBuilding): BuildingFeature | null {
+  try {
+    return {
+      id: r.id,
+      osmId: r.osm_id ?? undefined,
+      source: r.source as BuildingFeature["source"],
+      geometryGeoJSON: JSON.parse(r.geometry),
+      centroidLon: r.centroid_lon,
+      centroidLat: r.centroid_lat,
+      areaSqm: r.area_sqm,
+      buildingTag: r.building_tag ?? undefined,
+      name: r.name ?? undefined,
+      operator: r.operator ?? undefined,
+      rawTags: safeJsonParse<Record<string, string>>(r.raw_tags, {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getAllBuildings(): Promise<BuildingFeature[]> {
   const db = await getDB();
   const rows = await db.select<DBBuilding[]>("SELECT * FROM buildings ORDER BY area_sqm DESC");
-  return rows.map(rowToBuilding);
+  return rows.map(rowToBuilding).filter((b): b is BuildingFeature => b !== null);
 }
 
 // ── Leads ────────────────────────────────────────────────────────────────────
@@ -64,29 +103,38 @@ interface DBLead {
   solar_status: string; pipeline_stage: string;
   estimated_kwh_per_year: number | null; estimated_kwp: number | null;
   monthly_kwh: string | null; company: string | null;
-  telephone: string | null; website: string | null;
+  telephone: string | null; website: string | null; email: string | null;
   notes: string | null; tags: string | null; owner: string | null;
-  nif: string | null;
-  building_use: string | null;
+  nif: string | null; building_use: string | null;
   has_existing_pv: string | null;
+  flagged: number | null; drop_reason: string | null;
   created_at: string; updated_at: string;
 }
 
 function rowToLead(r: DBLead): Lead {
   return {
-    id: r.id, buildingId: r.building_id, address: r.address ?? undefined,
-    solarStatus: r.solar_status as Lead["solarStatus"],
-    pipelineStage: r.pipeline_stage as Lead["pipelineStage"],
+    id: r.id,
+    buildingId: r.building_id,
+    address: r.address ?? undefined,
+    solarStatus: VALID_SOLAR.has(r.solar_status) ? r.solar_status as SolarStatus : "unknown",
+    pipelineStage: VALID_PIPELINE.has(r.pipeline_stage) ? r.pipeline_stage as PipelineStage : "to_contact",
     estimatedKwhPerYear: r.estimated_kwh_per_year ?? undefined,
     estimatedKwp: r.estimated_kwp ?? undefined,
-    monthlyKwh: r.monthly_kwh ? JSON.parse(r.monthly_kwh) : undefined,
-    company: r.company ?? undefined, telephone: r.telephone ?? undefined,
-    website: r.website ?? undefined, notes: r.notes ?? undefined,
-    tags: r.tags ?? undefined, owner: r.owner ?? undefined,
+    monthlyKwh: safeJsonParse<number[]>(r.monthly_kwh, []) || undefined,
+    company: r.company ?? undefined,
+    telephone: r.telephone ?? undefined,
+    website: r.website ?? undefined,
+    email: r.email ?? undefined,
+    notes: r.notes ?? undefined,
+    tags: r.tags ?? undefined,
+    owner: r.owner ?? undefined,
     nif: r.nif ?? undefined,
-    buildingUse: r.building_use as Lead["buildingUse"] ?? undefined,
+    buildingUse: VALID_USE.has(r.building_use ?? "") ? r.building_use as BuildingUse : undefined,
     hasExistingPv: r.has_existing_pv as Lead["hasExistingPv"] ?? undefined,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    flagged: r.flagged === 1 ? true : false,
+    dropReason: r.drop_reason as DropReason ?? undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 
@@ -96,20 +144,23 @@ export async function saveLead(lead: Lead): Promise<void> {
     `INSERT OR REPLACE INTO leads
        (id, building_id, address, solar_status, pipeline_stage,
         estimated_kwh_per_year, estimated_kwp, monthly_kwh,
-        company, telephone, website, notes, tags, owner,
+        company, telephone, website, email, notes, tags, owner,
         nif, building_use, has_existing_pv,
-        updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        flagged, drop_reason,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,  datetime('now'))`,
     [
       lead.id, lead.buildingId, lead.address ?? null,
       lead.solarStatus, lead.pipelineStage,
       lead.estimatedKwhPerYear ?? null, lead.estimatedKwp ?? null,
-      lead.monthlyKwh ? JSON.stringify(lead.monthlyKwh) : null,
+      lead.monthlyKwh && lead.monthlyKwh.length > 0 ? JSON.stringify(lead.monthlyKwh) : null,
       lead.company ?? null, lead.telephone ?? null,
-      lead.website ?? null, lead.notes ?? null,
-      lead.tags ?? null, lead.owner ?? null,
+      lead.website ?? null, lead.email ?? null,
+      lead.notes ?? null, lead.tags ?? null, lead.owner ?? null,
       lead.nif ?? null, lead.buildingUse ?? null,
       lead.hasExistingPv ?? null,
+      lead.flagged ? 1 : 0, lead.dropReason ?? null,
+      lead.createdAt,
     ],
   );
 }
@@ -118,6 +169,11 @@ export async function getAllLeads(): Promise<Lead[]> {
   const db = await getDB();
   const rows = await db.select<DBLead[]>("SELECT * FROM leads ORDER BY updated_at DESC");
   return rows.map(rowToLead);
+}
+
+export async function deleteLead(leadId: string): Promise<void> {
+  const db = await getDB();
+  await db.execute("DELETE FROM leads WHERE id = ?", [leadId]);
 }
 
 export async function duplicateLead(leadId: string): Promise<Lead | null> {
@@ -176,7 +232,7 @@ export async function getAllNotes(): Promise<Record<string, LeadNote[]>> {
   const grouped: Record<string, LeadNote[]> = {};
   for (const r of rows) {
     const n = rowToNote(r);
-    if (!grouped[n.leadId]) grouped[n.leadId] = [];
+    grouped[n.leadId] ??= [];
     grouped[n.leadId].push(n);
   }
   return grouped;
@@ -198,7 +254,7 @@ export async function exportLeadsCSV(): Promise<string> {
 
   const header = [
     "id","address","lat","lon","area_m2","building_type","company","nif",
-    "telephone","website","solar_status","pipeline_stage",
+    "telephone","website","email","solar_status","pipeline_stage","flagged",
     "estimated_kwh_year","estimated_kwp","notes","updated_at",
   ].join(",");
 
@@ -207,8 +263,8 @@ export async function exportLeadsCSV(): Promise<string> {
       r.id, `"${r.address ?? ""}"`,
       r.centroid_lat, r.centroid_lon, r.area_sqm, r.building_tag ?? "",
       `"${r.company ?? ""}"`, `"${r.nif ?? ""}"`,
-      `"${r.telephone ?? ""}"`, `"${r.website ?? ""}"`,
-      r.solar_status, r.pipeline_stage,
+      `"${r.telephone ?? ""}"`, `"${r.website ?? ""}"`, `"${r.email ?? ""}"`,
+      r.solar_status, r.pipeline_stage, r.flagged ? "sim" : "",
       r.estimated_kwh_per_year ?? "", r.estimated_kwp ?? "",
       `"${(r.notes ?? "").replace(/"/g, "'")}"`, r.updated_at,
     ].join(","),
