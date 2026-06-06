@@ -114,6 +114,10 @@ export function autoFillLeadFromOSM(b: BuildingFeature, lead: Lead): Lead {
     const v = pickAddress(b);
     if (v) { out.address = v; changed = true; }
   }
+  if (!out.buildingUse && b.inferredUse && b.inferredUse !== "other") {
+    out.buildingUse = b.inferredUse;
+    changed = true;
+  }
   if (out.solarStatus === "unknown" && hasSolarOnOSM(b)) {
     out.solarStatus = "has_panels";
     changed = true;

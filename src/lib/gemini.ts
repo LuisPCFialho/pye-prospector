@@ -9,56 +9,78 @@ export interface CompanyInfo {
   email?: string;
   nif?: string;
   confidence: "high" | "medium" | "low";
+  /** URL of the source Gemini used (from search grounding), if any. */
+  sourceUrl?: string;
+}
+
+export interface GeminiLookupHints {
+  address?: string;
+  /** Nearest named OSM feature from Nominatim (often the business). */
+  nominatimName?: string;
+  /** Strongest nearby OSM business name, if any. */
+  osmHint?: string;
 }
 
 /**
- * Ask Gemini what company operates at a given coordinate in Portugal.
- * Returns null if Gemini can't identify it with confidence.
+ * Ask Gemini (with Google Search grounding) what company operates at a location
+ * in Portugal. Grounding turns the model from a guesser into a real look-up that
+ * can read Maps/registry pages. Returns null if nothing confident is found.
  */
 export async function lookupCompanyWithGemini(
   lat: number,
   lon: number,
-  address?: string,
+  hints: GeminiLookupHints = {},
 ): Promise<CompanyInfo | null> {
   if (!GEMINI_KEY) return null;
   const models = [
-    "gemini-flash-lite-latest",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-flash-latest",
+    "gemini-flash-lite-latest",
   ];
-  const locationHint = address
-    ? `morada: "${address}"`
-    : `coordenadas GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)} (Portugal)`;
-  const prompt = `Identifica a empresa ou negócio que opera nesta localização em Portugal (${locationHint}).
-Responde APENAS com JSON válido no formato:
-{"name":"NomeEmpresa","phone":"+351XXXXXXXXX","website":"https://...","nif":"XXXXXXXXX","confidence":"high|medium|low"}
-- confidence "high" = tens certeza absoluta (empresa conhecida, informação verificável)
-- confidence "medium" = razoavelmente confiante
-- confidence "low" = apenas suspeita
-- Se não souberes, responde: {"confidence":"low"}
-- NIF só se souberes com certeza, caso contrário omite
-- Responde APENAS com o JSON, sem texto adicional.`;
+
+  const lines = [
+    `Coordenadas: ${lat.toFixed(5)}, ${lon.toFixed(5)} (Portugal).`,
+    hints.address ? `Morada aproximada: "${hints.address}".` : "",
+    hints.nominatimName ? `Local mais próximo no mapa: "${hints.nominatimName}".` : "",
+    hints.osmHint ? `Negócio próximo conhecido: "${hints.osmHint}".` : "",
+  ].filter(Boolean).join("\n");
+
+  const prompt = `Usa a Pesquisa Google para identificar a empresa ou negócio C&I que opera nesta localização em Portugal.
+${lines}
+
+Procura no Google Maps e em registos de empresas portuguesas. Devolve APENAS um objeto JSON:
+{"name":"Nome da Empresa","phone":"+351XXXXXXXXX","website":"https://...","nif":"XXXXXXXXX","confidence":"high|medium|low"}
+- confidence "high" só se confirmaste numa fonte (Maps/site/registo).
+- NIF só se o encontraste explicitamente (9 dígitos).
+- Se não conseguires identificar, devolve {"confidence":"low"}.
+- Responde SÓ com o JSON.`;
 
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12_000);
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 200 },
-        }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.status === 429 || res.status === 404) continue;
+      const timer = setTimeout(() => ctrl.abort(), 15_000);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            tools: [{ google_search: {} }],
+            generationConfig: { temperature: 0, maxOutputTokens: 400 },
+          }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.status === 429 || res.status === 404 || res.status === 400) continue;
       if (!res.ok) continue;
       const data = await res.json();
-      const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      const cand = data?.candidates?.[0];
+      const text: string = cand?.content?.parts?.map((p: { text?: string }) => p.text).filter(Boolean).join("") ?? "";
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) continue;
       let parsed: CompanyInfo;
@@ -68,6 +90,9 @@ Responde APENAS com JSON válido no formato:
         continue;
       }
       if (!parsed.name && parsed.confidence === "low") return null;
+      // Capture grounding source URL for trust
+      const groundingUrl = cand?.groundingMetadata?.groundingChunks?.[0]?.web?.uri;
+      if (groundingUrl) parsed.sourceUrl = groundingUrl;
       return parsed;
     } catch {
       // try next model

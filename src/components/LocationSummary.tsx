@@ -1,14 +1,21 @@
 import { useState, useEffect } from "react";
-import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap, MapPin } from "lucide-react";
+import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap, MapPin, Search } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead } from "../db/database";
 import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
-import { openExternal, streetViewUrl, googleNearbySearchUrl } from "../lib/openExternal";
-import { findNearbyBusinesses, type NearbyBusiness } from "../lib/companyLookup";
-import { lookupCompanyWithGemini, type CompanyInfo } from "../lib/gemini";
+import { openExternal, streetViewUrl, googleVerifyUrl } from "../lib/openExternal";
+import { resolveCompany, getCachedResolve } from "../lib/companyResolver";
+import type { CompanyCandidate, Lead } from "../types/building";
 
 type Tab = "flag" | "solar" | "drop";
+
+const SOURCE_LABEL: Record<CompanyCandidate["source"], string> = {
+  osm: "OSM",
+  nominatim: "Mapa",
+  gemini: "IA",
+  registry: "Registo",
+};
 
 export default function LocationSummary() {
   const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
@@ -19,14 +26,14 @@ export default function LocationSummary() {
   const setShowLocationDetails = useAppStore((s) => s.setShowLocationDetails);
   const setShowDropDialog   = useAppStore((s) => s.setShowDropDialog);
   const upsertLead          = useAppStore((s) => s.upsertLead);
+  const setSuccessMessage   = useAppStore((s) => s.setSuccessMessage);
 
-  const [tab, setTab]                     = useState<Tab>("flag");
-  const [calcingSolar, setCalcing]         = useState(false);
-  const [editingField, setEditing]         = useState<string | null>(null);
-  const [editValue, setEditValue]          = useState("");
-  const [nearbySuggestions, setSuggestions]   = useState<NearbyBusiness[]>([]);
-  const [geminiSuggestion, setGeminiSug]       = useState<CompanyInfo | null>(null);
-  const [loadingSuggestions, setLoadingSug]    = useState(false);
+  const [tab, setTab]                   = useState<Tab>("flag");
+  const [calcingSolar, setCalcing]       = useState(false);
+  const [editingField, setEditing]       = useState<string | null>(null);
+  const [editValue, setEditValue]        = useState("");
+  const [candidates, setCandidates]      = useState<CompanyCandidate[]>([]);
+  const [loadingLookup, setLoadingLookup] = useState(false);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
@@ -34,7 +41,7 @@ export default function LocationSummary() {
   // Auto-fill lead from OSM tags whenever a building is opened
   useEffect(() => {
     if (!building) return;
-    const base: import("../types/building").Lead = lead ?? {
+    const base: Lead = lead ?? {
       id: crypto.randomUUID(),
       buildingId: building.id,
       solarStatus: "unknown",
@@ -50,6 +57,7 @@ export default function LocationSummary() {
       filled.email !== base.email ||
       filled.nif !== base.nif ||
       filled.address !== base.address ||
+      filled.buildingUse !== base.buildingUse ||
       filled.solarStatus !== base.solarStatus
     )) {
       saveLead(filled).catch(() => {});
@@ -58,17 +66,11 @@ export default function LocationSummary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [building?.id]);
 
-  // Search Overpass POIs near building when company is still unknown
+  // Show cached candidates if we already resolved this building this session
   useEffect(() => {
-    if (!building) { setSuggestions([]); return; }
-    const currentCompany = getDisplayCompany(building, lead);
-    if (currentCompany !== "(sem nome — verificar)") { setSuggestions([]); return; }
-    setLoadingSug(true);
-    setSuggestions([]);
-    findNearbyBusinesses(building.centroidLat, building.centroidLon)
-      .then((list) => { setSuggestions(list.slice(0, 5)); setLoadingSug(false); })
-      .catch(() => setLoadingSug(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!building) { setCandidates([]); return; }
+    const cached = getCachedResolve(building.id);
+    setCandidates(cached?.candidates ?? []);
   }, [building?.id]);
 
   if (!showLocationSummary || !building) return null;
@@ -113,21 +115,38 @@ export default function LocationSummary() {
   }
 
   async function handleGetMetadata() {
-    if (!building) return;
-    setLoadingSug(true);
-    setSuggestions([]);
-    setGeminiSug(null);
-    const [overpassResults, geminiResult] = await Promise.all([
-      findNearbyBusinesses(building.centroidLat, building.centroidLon),
-      lookupCompanyWithGemini(
-        building.centroidLat,
-        building.centroidLon,
-        lead?.address,
-      ),
-    ]);
-    setSuggestions(overpassResults.slice(0, 5));
-    if (geminiResult?.name) setGeminiSug(geminiResult);
-    setLoadingSug(false);
+    if (!building || loadingLookup) return;
+    setLoadingLookup(true);
+    setCandidates([]);
+    try {
+      const { candidates: found } = await resolveCompany(building);
+      setCandidates(found);
+      if (found.length === 0) {
+        setSuccessMessage("Nenhuma empresa encontrada — tenta o Google Maps");
+        setTimeout(() => setSuccessMessage(null), 3000);
+      }
+    } finally {
+      setLoadingLookup(false);
+    }
+  }
+
+  async function applyCandidate(c: CompanyCandidate) {
+    const base = ensureLead();
+    const updated: Lead = {
+      ...base,
+      company: c.name,
+      website: c.website ?? base.website,
+      telephone: c.phone ?? base.telephone,
+      email: c.email ?? base.email,
+      nif: c.nif ?? base.nif,
+      address: c.address ?? base.address,
+      updatedAt: new Date().toISOString(),
+    };
+    try { await saveLead(updated); } catch { /* no tauri */ }
+    upsertLead(updated);
+    setCandidates([]);
+    setSuccessMessage(`Empresa definida: ${c.name}`);
+    setTimeout(() => setSuccessMessage(null), 2500);
   }
 
   const locationName = building.name ?? building.operator ?? lead?.address ?? `Way ${building.osmId ?? building.id.slice(0, 8)}`;
@@ -219,36 +238,6 @@ export default function LocationSummary() {
               onCancel={() => setEditing(null)}
             />
 
-            {/* Nearby business suggestions from Overpass POI search */}
-            {loadingSuggestions && (
-              <div className="text-[10px] text-[#8892a4] animate-pulse">A procurar empresas próximas…</div>
-            )}
-            {nearbySuggestions.length > 0 && (
-              <div>
-                <div className="text-[10px] text-[#8892a4] uppercase tracking-wide mb-1">Sugestões OSM ({nearbySuggestions[0].distance}m)</div>
-                <div className="flex flex-wrap gap-1">
-                  {nearbySuggestions.map((b) => (
-                    <button
-                      key={b.name}
-                      type="button"
-                      title={`${b.amenity ?? b.shop ?? b.office ?? b.industrial ?? ""} · ${b.distance}m`}
-                      onClick={async () => {
-                        await saveField("company", b.name);
-                        if (b.website) await saveField("website", b.website);
-                        if (b.phone) await saveField("telephone", b.phone);
-                        if (b.email) await saveField("email", b.email);
-                        if (b.nif) await saveField("nif", b.nif);
-                        setSuggestions([]);
-                      }}
-                      className="px-2 py-0.5 bg-[#1e1f30] hover:bg-[#f97316]/15 hover:text-[#f97316] border border-[#2a2b3d] hover:border-[#f97316]/30 rounded text-[10px] text-[#c8d0df] transition-all"
-                    >
-                      {b.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Website */}
             <EditableFieldRow
               label="Website"
@@ -277,33 +266,34 @@ export default function LocationSummary() {
               />
             )}
 
-            {/* Gemini suggestion chip */}
-            {geminiSuggestion?.name && (
-              <div>
-                <div className="text-[10px] text-[#8892a4] uppercase tracking-wide mb-1">
-                  IA {geminiSuggestion.confidence === "high" ? "✓ Alta confiança" : geminiSuggestion.confidence === "medium" ? "⚠ Média confiança" : "? Baixa confiança"}
+            {/* Unified ranked candidate list (OSM + Nominatim + Gemini) */}
+            {loadingLookup && (
+              <div className="text-[10px] text-[#8892a4] animate-pulse py-1">
+                A procurar empresa (mapa + OSM + IA)…
+              </div>
+            )}
+            {!loadingLookup && candidates.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] text-[#8892a4] uppercase tracking-wide">
+                  Candidatos ({candidates.length}) — clica para aplicar
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await saveField("company", geminiSuggestion.name!);
-                    if (geminiSuggestion.website) await saveField("website", geminiSuggestion.website);
-                    if (geminiSuggestion.phone) await saveField("telephone", geminiSuggestion.phone);
-                    if (geminiSuggestion.email) await saveField("email", geminiSuggestion.email);
-                    if (geminiSuggestion.nif) await saveField("nif", geminiSuggestion.nif);
-                    setGeminiSug(null);
-                  }}
-                  className={`w-full px-2 py-1 rounded border text-[11px] text-left transition-all ${
-                    geminiSuggestion.confidence === "high"
-                      ? "bg-green-900/20 border-green-700/40 text-green-300 hover:bg-green-900/30"
-                      : geminiSuggestion.confidence === "medium"
-                      ? "bg-yellow-900/20 border-yellow-700/40 text-yellow-300 hover:bg-yellow-900/30"
-                      : "bg-[#1e1f30] border-[#2a2b3d] text-[#8892a4] hover:text-white"
-                  }`}
-                >
-                  🤖 {geminiSuggestion.name}
-                  {geminiSuggestion.phone && <span className="text-[10px] opacity-70 ml-1">· {geminiSuggestion.phone}</span>}
-                </button>
+                {candidates.slice(0, 6).map((c, i) => (
+                  <button
+                    key={`${c.source}-${c.name}-${i}`}
+                    type="button"
+                    title={c.sourceUrl ? `Fonte: ${c.sourceUrl}` : `Fonte: ${SOURCE_LABEL[c.source]}`}
+                    onClick={() => applyCandidate(c)}
+                    className="w-full flex items-center gap-2 px-2 py-1 rounded border border-[#2a2b3d] bg-[#1e1f30] hover:border-[#f97316]/40 hover:bg-[#f97316]/10 text-left transition-all"
+                  >
+                    <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-[#2a2b3d] text-[#8892a4] shrink-0">
+                      {SOURCE_LABEL[c.source]}
+                    </span>
+                    <span className="flex-1 text-[11px] text-[#c8d0df] truncate">{c.name}</span>
+                    {c.distanceM != null && c.distanceM > 0 && (
+                      <span className="text-[9px] text-[#4a5160] shrink-0">{c.distanceM}m</span>
+                    )}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -311,12 +301,13 @@ export default function LocationSummary() {
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
-                title="Pesquisar empresa (OSM + IA)"
+                title="Procurar empresa (mapa + OSM + IA com pesquisa Google)"
                 onClick={handleGetMetadata}
-                disabled={loadingSuggestions}
-                className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors disabled:opacity-50"
+                disabled={loadingLookup}
+                className="flex-1 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded text-[11px] text-[#c8d0df] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {loadingSuggestions ? "A procurar…" : "Get Metadata"}
+                <Search size={11} />
+                {loadingLookup ? "A procurar…" : "Procurar empresa"}
               </button>
               {displayWebsite && (
                 <button
@@ -330,8 +321,8 @@ export default function LocationSummary() {
               )}
               <button
                 type="button"
-                title="Empresas próximas no Google Maps"
-                onClick={() => openExternal(googleNearbySearchUrl(building.centroidLat, building.centroidLon))}
+                title="Verificar empresa no Google Maps (pin exato)"
+                onClick={() => openExternal(googleVerifyUrl(building.centroidLat, building.centroidLon, lead?.company))}
                 className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
               >
                 <MapPin size={13} />
@@ -340,7 +331,7 @@ export default function LocationSummary() {
                 <button
                   type="button"
                   title="Abrir no OpenStreetMap"
-                  onClick={() => openExternal(`https://www.openstreetmap.org/way/${building.osmId}`)}
+                  onClick={() => openExternal(`https://www.openstreetmap.org/${building.osmType ?? "way"}/${building.osmId}`)}
                   className="w-7 h-7 bg-[#1e1f30] hover:bg-[#252637] border border-[#2a2b3d] rounded flex items-center justify-center text-[#8892a4] hover:text-white transition-colors"
                 >
                   <ExternalLink size={13} />

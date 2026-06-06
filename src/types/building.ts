@@ -65,7 +65,9 @@ export const DROP_REASON_LABELS: Record<DropReason, string> = {
 export interface BuildingFeature {
   id: string;
   osmId?: number;
-  source: "osm" | "ms_footprints" | "manual" | "preset";
+  /** "way" | "relation" — distinguishes OSM element type (needed for OSM deep-links). */
+  osmType?: "way" | "relation";
+  source: "osm" | "ms_footprints" | "overture" | "manual" | "preset";
   geometryGeoJSON: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   centroidLon: number;
   centroidLat: number;
@@ -74,6 +76,26 @@ export interface BuildingFeature {
   name?: string;
   operator?: string;
   rawTags?: Record<string, string>;
+  /** Inferred C&I use from OSM tags + surrounding landuse. */
+  inferredUse?: BuildingUse;
+  /** 0-1 confidence that this is a commercial/industrial rooftop. */
+  ciScore?: number;
+}
+
+/** A ranked company candidate from any lookup source. */
+export interface CompanyCandidate {
+  name: string;
+  nif?: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  cae?: string;
+  address?: string;
+  source: "osm" | "nominatim" | "gemini" | "registry";
+  /** Numeric score for ranking; higher = more confident. */
+  score: number;
+  distanceM?: number;
+  sourceUrl?: string;
 }
 
 export interface Lead {

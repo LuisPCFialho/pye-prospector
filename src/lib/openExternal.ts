@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
  * Falls back to window.open() in the browser dev environment.
  */
 export async function openExternal(url: string): Promise<void> {
+  if (!url) return;
   try {
     await invoke("open_url", { url });
   } catch {
@@ -15,18 +16,43 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
-/** Opens directly in Google Street View at the given coordinates. */
-export function streetViewUrl(lat: number, lon: number): string {
-  // @lat,lon,3a = street view mode; 75y = FOV; 90t = tilt; data=!3m6!1e1 = street view layer
-  return `https://www.google.com/maps/@${lat},${lon},3a,75y,90t/data=!3m6!1e1`;
+// ── Official Google Maps URLs API (api=1) — no API key, documented & stable ──
+// https://developers.google.com/maps/documentation/urls/get-started
+
+/** URL-encoded "lat,lon" pair (comma must be %2C). */
+function coord(lat: number, lon: number): string {
+  return `${lat}%2C${lon}`;
 }
 
-/** Google Maps satellite view centered on coordinates. */
+/** Satellite map view centered at coordinates. */
 export function googleMapsUrl(lat: number, lon: number): string {
-  return `https://www.google.com/maps/@${lat},${lon},18z/data=!3m1!1e3`;
+  return `https://www.google.com/maps/@?api=1&map_action=map&center=${coord(lat, lon)}&zoom=18&basemap=satellite`;
 }
 
-/** Google Maps search for businesses near a coordinate. */
+/** Street View panorama at coordinates (reliable pano open). */
+export function streetViewUrl(lat: number, lon: number): string {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord(lat, lon)}`;
+}
+
+/** Search for businesses near a coordinate. */
 export function googleNearbySearchUrl(lat: number, lon: number): string {
-  return `https://www.google.com/maps/search/empresas/@${lat},${lon},17z`;
+  return `https://www.google.com/maps/search/?api=1&query=${coord(lat, lon)}`;
+}
+
+/**
+ * "Verify on Google" — drops a pin at the exact centroid and surfaces Google's
+ * own business label/place card if one is registered there. The best free way
+ * to confirm which company occupies a footprint. If a company name is known,
+ * it name-matches near the coordinate in one shot.
+ */
+export function googleVerifyUrl(lat: number, lon: number, company?: string): string {
+  if (company && company.trim() && company !== "(sem nome — verificar)") {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(company.trim())}%20${coord(lat, lon)}`;
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${coord(lat, lon)}`;
+}
+
+/** Driving directions to a coordinate. */
+export function directionsUrl(lat: number, lon: number): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${coord(lat, lon)}&travelmode=driving`;
 }

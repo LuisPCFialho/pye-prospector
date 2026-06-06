@@ -4,7 +4,7 @@ import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
 import { saveLead, duplicateLead, getAllLeads } from "../db/database";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
-import { openExternal, streetViewUrl, googleMapsUrl } from "../lib/openExternal";
+import { openExternal, streetViewUrl, googleMapsUrl, googleVerifyUrl } from "../lib/openExternal";
 
 type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "streetview";
 
@@ -249,10 +249,10 @@ export default function LocationDetails() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openExternal(googleMapsUrl(building.centroidLat, building.centroidLon))}
+                    onClick={() => openExternal(googleVerifyUrl(building.centroidLat, building.centroidLon, lead.company))}
                     className="flex-1 text-center py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200"
                   >
-                    🗺️ Google Maps
+                    🗺️ Verificar no Maps
                   </button>
                 </div>
               )}
@@ -282,7 +282,7 @@ export default function LocationDetails() {
                 {building.osmId && (
                   <button
                     type="button"
-                    onClick={() => openExternal(`https://www.openstreetmap.org/way/${building.osmId}`)}
+                    onClick={() => openExternal(`https://www.openstreetmap.org/${building.osmType ?? "way"}/${building.osmId}`)}
                     className="text-xs text-brand-400 hover:text-brand-300"
                   >
                     Abrir no OSM ↗

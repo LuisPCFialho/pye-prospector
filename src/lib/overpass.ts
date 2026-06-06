@@ -1,39 +1,83 @@
 import * as turf from "@turf/turf";
-import type { BuildingFeature, Lead } from "../types/building";
+import type { BuildingFeature, Lead, BuildingUse } from "../types/building";
 import { buildingFillColor } from "../types/building";
 
 export interface BBox {
   minLon: number; minLat: number; maxLon: number; maxLat: number;
 }
 
+interface OverpassGeom { lat: number; lon: number }
+interface OverpassMember {
+  type: string;
+  ref: number;
+  role: string;
+  geometry?: OverpassGeom[];
+}
 interface OverpassElement {
-  type: "way" | "relation";
+  type: "way" | "relation" | "node";
   id: number;
   tags?: Record<string, string>;
-  geometry?: { lat: number; lon: number }[];
+  geometry?: OverpassGeom[];
+  members?: OverpassMember[];
+  center?: { lat: number; lon: number };
 }
 
 const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-  "https://overpass.openstreetmap.ru/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
 ];
 
-const CI_FILTER = `["building"]`;
+/** Maps OSM building/secondary tags to our BuildingUse + a C&I confidence (0-1). */
+const CI_BUILDING: Record<string, { use: BuildingUse; ci: number }> = {
+  warehouse:      { use: "logistics", ci: 0.95 },
+  industrial:     { use: "metalwork", ci: 0.95 },
+  factory:        { use: "metalwork", ci: 0.95 },
+  manufacture:    { use: "metalwork", ci: 0.95 },
+  hangar:         { use: "logistics", ci: 0.85 },
+  retail:         { use: "retail",    ci: 0.9  },
+  supermarket:    { use: "retail",    ci: 0.9  },
+  commercial:     { use: "office",    ci: 0.85 },
+  office:         { use: "office",    ci: 0.85 },
+  farm:           { use: "agriculture", ci: 0.7 },
+  farm_auxiliary: { use: "agriculture", ci: 0.7 },
+  barn:           { use: "agriculture", ci: 0.6 },
+  greenhouse:     { use: "agriculture", ci: 0.6 },
+};
+
+function classifyUse(
+  tags: Record<string, string> = {},
+  landuse?: string,
+): { use: BuildingUse; ci: number } {
+  const b = tags.building;
+  if (b && CI_BUILDING[b]) return CI_BUILDING[b];
+  if (tags.industrial || tags.man_made === "works") return { use: "metalwork", ci: 0.9 };
+  if (tags.shop || tags.office) return { use: tags.office ? "office" : "retail", ci: 0.85 };
+  if (tags.amenity && ["fuel", "marketplace", "restaurant", "fast_food"].includes(tags.amenity))
+    return { use: "retail", ci: 0.6 };
+  if (b === "yes" && landuse === "industrial") return { use: "metalwork", ci: 0.6 };
+  if (b === "yes" && (landuse === "commercial" || landuse === "retail")) return { use: "retail", ci: 0.55 };
+  if (landuse === "industrial") return { use: "metalwork", ci: 0.45 };
+  return { use: "other", ci: 0.2 };
+}
 
 function buildQuery(bbox: BBox): string {
   const { minLat, minLon, maxLat, maxLon } = bbox;
-  return `[out:json][timeout:25][maxsize:32000000];
+  const b = `(${minLat},${minLon},${maxLat},${maxLon})`;
+  return `[out:json][timeout:60][maxsize:536870912];
 (
-  way${CI_FILTER}(${minLat},${minLon},${maxLat},${maxLon});
+  way["building"]${b};
+  relation["building"]["type"="multipolygon"]${b};
 );
+out geom tags;
+way["landuse"~"^(industrial|commercial|retail)$"]${b};
 out geom tags;`;
 }
 
 async function tryMirror(url: string, query: string): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 28_000);
+  const timer = setTimeout(() => controller.abort(), 30_000);
   return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -42,80 +86,189 @@ async function tryMirror(url: string, query: string): Promise<Response> {
   }).finally(() => clearTimeout(timer));
 }
 
-function elementToBuilding(el: OverpassElement): BuildingFeature | null {
-  if (!el.geometry || el.geometry.length < 3) return null;
+function closeRing(g: OverpassGeom[]): [number, number][] {
+  const c = g.map((p) => [p.lon, p.lat] as [number, number]);
+  if (c.length < 3) return c;
+  const first = c[0], last = c[c.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) c.push([first[0], first[1]]);
+  return c;
+}
 
-  let coords = el.geometry.map((p) => [p.lon, p.lat] as [number, number]);
-  if (
-    coords[0][0] !== coords[coords.length - 1][0] ||
-    coords[0][1] !== coords[coords.length - 1][1]
-  ) {
-    coords = [...coords, coords[0]];
+/** Build a turf polygon/multipolygon from a relation's outer/inner members. */
+function relationToGeometry(el: OverpassElement): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
+  const outers = (el.members ?? [])
+    .filter((m) => m.role === "outer" && (m.geometry?.length ?? 0) >= 3)
+    .map((m) => closeRing(m.geometry!));
+  const inners = (el.members ?? [])
+    .filter((m) => m.role === "inner" && (m.geometry?.length ?? 0) >= 3)
+    .map((m) => closeRing(m.geometry!));
+  if (outers.length === 0) return null;
+  try {
+    if (outers.length === 1) {
+      return turf.polygon([outers[0], ...inners]).geometry;
+    }
+    // Multiple outers → multipolygon (holes assigned to the first outer for simplicity)
+    return turf.multiPolygon(outers.map((o, i) => (i === 0 ? [o, ...inners] : [o]))).geometry;
+  } catch {
+    return null;
+  }
+}
+
+function elementToBuilding(
+  el: OverpassElement,
+  landusePolys: { poly: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>; type: string }[],
+): BuildingFeature | null {
+  let geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null = null;
+
+  if (el.type === "way") {
+    if (!el.geometry || el.geometry.length < 3) return null;
+    const coords = closeRing(el.geometry);
+    if (coords.length < 4) return null;
+    try { geometry = turf.polygon([coords]).geometry; } catch { return null; }
+  } else if (el.type === "relation") {
+    geometry = relationToGeometry(el);
+  }
+  if (!geometry) return null;
+
+  let areaSqm: number;
+  let centroidLon: number, centroidLat: number;
+  try {
+    areaSqm = Math.round(turf.area(geometry));
+    const c = turf.centroid(geometry).geometry.coordinates;
+    centroidLon = c[0];
+    centroidLat = c[1];
+  } catch {
+    return null;
+  }
+  if (areaSqm < 200) return null;
+  if (!Number.isFinite(centroidLon) || !Number.isFinite(centroidLat)) return null;
+
+  // Determine surrounding landuse via point-in-polygon
+  let landuse: string | undefined;
+  const pt = turf.point([centroidLon, centroidLat]);
+  for (const lu of landusePolys) {
+    try {
+      if (turf.booleanPointInPolygon(pt, lu.poly)) { landuse = lu.type; break; }
+    } catch { /* skip bad polygon */ }
   }
 
-  const poly = turf.polygon([coords]);
-  const areaSqm = Math.round(turf.area(poly));
-  if (areaSqm < 200) return null;
-
-  const c = turf.centroid(poly).geometry.coordinates;
+  const tags = el.tags ?? {};
+  const { use, ci } = classifyUse(tags, landuse);
 
   return {
-    id: `osm_way_${el.id}`,
+    id: `osm_${el.type}_${el.id}`,
     osmId: el.id,
+    osmType: el.type === "relation" ? "relation" : "way",
     source: "osm",
-    geometryGeoJSON: poly.geometry,
-    centroidLon: c[0],
-    centroidLat: c[1],
+    geometryGeoJSON: geometry,
+    centroidLon,
+    centroidLat,
     areaSqm,
-    buildingTag: el.tags?.building,
-    name: el.tags?.name ?? el.tags?.["name:en"],
-    operator: el.tags?.operator,
-    rawTags: el.tags,
+    buildingTag: tags.building,
+    name: tags.name ?? tags["name:en"],
+    operator: tags.operator,
+    rawTags: tags,
+    inferredUse: use,
+    ciScore: ci,
   };
 }
 
-export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[]> {
+/** Splits a bbox into a grid when it is large, to avoid Overpass timeouts. */
+function tileBBox(bbox: BBox, maxDeg = 0.02): BBox[] {
+  const w = bbox.maxLon - bbox.minLon;
+  const h = bbox.maxLat - bbox.minLat;
+  if (w <= maxDeg && h <= maxDeg) return [bbox];
+  const cols = Math.ceil(w / maxDeg);
+  const rows = Math.ceil(h / maxDeg);
+  const tiles: BBox[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      tiles.push({
+        minLon: bbox.minLon + (w * c) / cols,
+        maxLon: bbox.minLon + (w * (c + 1)) / cols,
+        minLat: bbox.minLat + (h * r) / rows,
+        maxLat: bbox.minLat + (h * (r + 1)) / rows,
+      });
+    }
+  }
+  return tiles;
+}
+
+async function fetchTile(bbox: BBox): Promise<BuildingFeature[]> {
   const query = buildQuery(bbox);
   const errors: string[] = [];
 
   for (const mirror of MIRRORS) {
     try {
       const res = await tryMirror(mirror, query);
-
-      if (!res.ok) {
-        errors.push(`${mirror}: HTTP ${res.status}`);
-        continue;
-      }
+      if (!res.ok) { errors.push(`${mirror}: HTTP ${res.status}`); continue; }
 
       const text = await res.text();
-
       if (text.trimStart().startsWith("<")) {
         const msg = text.match(/<p[^>]*>.*?Error.*?<\/p>/s)?.[0]
-          ?.replace(/<[^>]+>/g, "").trim()
-          ?? "Overpass server error";
+          ?.replace(/<[^>]+>/g, "").trim() ?? "Overpass server error";
         errors.push(`${mirror}: ${msg.slice(0, 120)}`);
         continue;
       }
 
       let data: { elements: OverpassElement[] };
-      try {
-        data = JSON.parse(text) as { elements: OverpassElement[] };
-      } catch {
-        errors.push(`${mirror}: JSON inválido`);
-        continue;
+      try { data = JSON.parse(text) as { elements: OverpassElement[] }; }
+      catch { errors.push(`${mirror}: JSON inválido`); continue; }
+
+      const elements = data.elements ?? [];
+
+      // Separate landuse polygons from buildings
+      const landusePolys: { poly: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>; type: string }[] = [];
+      const buildingEls: OverpassElement[] = [];
+      for (const el of elements) {
+        if (el.tags?.landuse && el.type === "way" && (el.geometry?.length ?? 0) >= 3) {
+          try {
+            landusePolys.push({
+              poly: turf.polygon([closeRing(el.geometry!)]),
+              type: el.tags.landuse,
+            });
+          } catch { /* skip */ }
+        } else if (el.tags?.building) {
+          buildingEls.push(el);
+        }
       }
-      return (data.elements ?? [])
-        .map(elementToBuilding)
+
+      return buildingEls
+        .map((el) => elementToBuilding(el, landusePolys))
         .filter((b): b is BuildingFeature => b !== null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`${mirror}: ${msg.slice(0, 80)}`);
+      errors.push(`${mirror}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 100));
     }
   }
+  throw new Error(`Overpass falhou:\n${errors.join("\n")}`);
+}
 
-  throw new Error(
-    `Todos os servidores Overpass falharam:\n${errors.join("\n")}`
-  );
+/** Deduplicate buildings by id, then by geometric overlap of centroids (~5m). */
+function dedupeBuildings(buildings: BuildingFeature[]): BuildingFeature[] {
+  const byId = new Map<string, BuildingFeature>();
+  for (const b of buildings) {
+    if (!byId.has(b.id)) byId.set(b.id, b);
+  }
+  return [...byId.values()];
+}
+
+export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[]> {
+  const tiles = tileBBox(bbox);
+  // Fetch tiles sequentially to be gentle on Overpass mirrors
+  const all: BuildingFeature[] = [];
+  const tileErrors: string[] = [];
+  for (const tile of tiles) {
+    try {
+      const result = await fetchTile(tile);
+      all.push(...result);
+    } catch (e) {
+      tileErrors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (all.length === 0 && tileErrors.length > 0) {
+    throw new Error(tileErrors[0]);
+  }
+  return dedupeBuildings(all);
 }
 
 /** Build GeoJSON, enriching each feature with lead status for map coloring. */
@@ -130,7 +283,8 @@ export function buildingsToGeoJSON(
       const color = buildingFillColor(lead?.solarStatus, lead?.pipelineStage, lead?.flagged);
       return {
         type: "Feature" as const,
-        id: b.osmId,
+        // Stable numeric id for feature-state; hash the string id to avoid way/relation collisions
+        id: hashId(b.id),
         properties: {
           ...b,
           geometryGeoJSON: undefined,
@@ -143,4 +297,13 @@ export function buildingsToGeoJSON(
       };
     }),
   };
+}
+
+/** Deterministic 31-bit hash of a string id → stable numeric feature id. */
+function hashId(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return h & 0x7fffffff;
 }
