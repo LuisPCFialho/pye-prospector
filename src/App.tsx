@@ -16,6 +16,7 @@ const StreetViewModal   = lazy(() => import("./components/StreetViewModal"));
 const TableView         = lazy(() => import("./components/TableView"));
 const SearchFilter      = lazy(() => import("./components/SearchFilter"));
 const DropLocationDialog = lazy(() => import("./components/DropLocationDialog"));
+const SettingsModal     = lazy(() => import("./components/SettingsModal"));
 
 export default function App() {
   const viewMode            = useAppStore((s) => s.viewMode);
@@ -23,6 +24,7 @@ export default function App() {
   const showStreetView      = useAppStore((s) => s.showStreetView);
   const showSearchFilter    = useAppStore((s) => s.showSearchFilter);
   const showDropDialog      = useAppStore((s) => s.showDropDialog);
+  const showSettings        = useAppStore((s) => s.showSettings);
   const successMessage      = useAppStore((s) => s.successMessage);
 
   const setBuildings = useAppStore((s) => s.setBuildings);
@@ -94,6 +96,7 @@ export default function App() {
             {showLocationDetails && <LocationDetails />}
             {showStreetView && <StreetViewModal />}
             {showDropDialog && <DropLocationDialog />}
+            {showSettings && <SettingsModal />}
           </Suspense>
         </div>
 

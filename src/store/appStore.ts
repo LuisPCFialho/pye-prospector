@@ -34,6 +34,7 @@ interface AppState {
   showSearchFilter: boolean;
   showDropDialog: boolean;
   showLayersPanel: boolean;
+  showSettings: boolean;
 
   isLoadingBuildings: boolean;
   loadError: string | null;
@@ -73,6 +74,7 @@ interface AppState {
   setShowSearchFilter: (v: boolean) => void;
   setShowDropDialog: (v: boolean) => void;
   setShowLayersPanel: (v: boolean) => void;
+  setShowSettings: (v: boolean) => void;
 
   setLoadingBuildings: (v: boolean) => void;
   setLoadError: (e: string | null) => void;
@@ -111,6 +113,7 @@ export const useAppStore = create<AppState>((set) => ({
   showSearchFilter: false,
   showDropDialog: false,
   showLayersPanel: false,
+  showSettings: false,
 
   isLoadingBuildings: false,
   loadError: null,
@@ -160,6 +163,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowSearchFilter: (v) => set({ showSearchFilter: v }),
   setShowDropDialog: (v) => set({ showDropDialog: v }),
   setShowLayersPanel: (v) => set({ showLayersPanel: v }),
+  setShowSettings: (v) => set({ showSettings: v }),
 
   setLoadingBuildings: (v) => set({ isLoadingBuildings: v }),
   setLoadError: (e) => set({ loadError: e }),

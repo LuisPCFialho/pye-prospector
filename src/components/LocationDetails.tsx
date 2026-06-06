@@ -5,6 +5,7 @@ import { saveLead, duplicateLead, getAllLeads } from "../db/database";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
 import { openExternal, streetViewUrl, googleMapsUrl, googleVerifyUrl } from "../lib/openExternal";
+import { computeSolarFinance, formatEur } from "../lib/solarFinance";
 
 type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "streetview";
 
@@ -221,6 +222,29 @@ export default function LocationDetails() {
                   {calcingSolar ? "A calcular…" : "☀️ Calcular Potencial (PVGIS)"}
                 </button>
               )}
+
+              {/* Financial / ROI analysis */}
+              {lead?.estimatedKwhPerYear && (() => {
+                const fin = computeSolarFinance(kwp, lead.estimatedKwhPerYear);
+                return (
+                  <div className="mt-2 border-t border-slate-700/50 pt-3">
+                    <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-2">
+                      Análise Financeira (estimativa)
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <ROField label="Investimento" value={formatEur(fin.investmentEur)} />
+                      <ROField label="Poupança/ano" value={formatEur(fin.annualSavingsEur)} accent />
+                      <ROField label="Payback" value={`${fin.paybackYears} anos`} accent />
+                      <ROField label="Poupança 25 anos" value={formatEur(fin.lifetimeSavingsEur)} accent />
+                      <ROField label="CO₂ evitado/ano" value={`${fin.co2TonnesPerYear} t`} />
+                      <ROField label="Autoconsumo" value="~75%" />
+                    </div>
+                    <p className="text-[9px] text-slate-600 mt-2">
+                      Estimativa para prospeção · tarifa 0,16€/kWh · custo escalonado por dimensão.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

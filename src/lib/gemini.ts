@@ -1,6 +1,13 @@
 import type { BuildingFeature, Lead } from "../types/building";
 
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY ?? "";
+/** Resolve the Gemini key: user override in localStorage wins over the build-time env. */
+function geminiKey(): string {
+  try {
+    const override = localStorage.getItem("pye:geminiKey");
+    if (override && override.trim()) return override.trim();
+  } catch { /* ignore */ }
+  return import.meta.env.VITE_GEMINI_API_KEY ?? "";
+}
 
 export interface CompanyInfo {
   name?: string;
@@ -31,7 +38,8 @@ export async function lookupCompanyWithGemini(
   lon: number,
   hints: GeminiLookupHints = {},
 ): Promise<CompanyInfo | null> {
-  if (!GEMINI_KEY) return null;
+  const key = geminiKey();
+  if (!key) return null;
   const models = [
     "gemini-2.5-flash",
     "gemini-2.0-flash",
@@ -58,7 +66,7 @@ Procura no Google Maps e em registos de empresas portuguesas. Devolve APENAS um 
 
   for (const model of models) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 15_000);
       let res: Response;
@@ -115,7 +123,7 @@ interface AIRequest {
  * Adapted from PYE-Prospect-Studio.
  */
 export async function askAI(req: AIRequest): Promise<string> {
-  if (GEMINI_KEY) {
+  if (geminiKey()) {
     try {
       return await callGemini(req);
     } catch (e) {
@@ -136,10 +144,11 @@ async function callGemini(req: AIRequest): Promise<string> {
     "gemini-flash-latest",
   ];
 
+  const key = geminiKey();
   let lastError = "";
   for (const model of models) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 20_000);
       let res: Response;

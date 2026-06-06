@@ -49,6 +49,7 @@ export default function Sidebar() {
   const setViewMode         = useAppStore((s) => s.setViewMode);
   const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
   const setShowLayersPanel  = useAppStore((s) => s.setShowLayersPanel);
+  const setShowSettings     = useAppStore((s) => s.setShowSettings);
 
   async function handleGetRooftops() {
     const bbox = getViewportBBox();
@@ -120,7 +121,7 @@ export default function Sidebar() {
         setViewMode("map");
         break;
       case "go-to":      handleGoToSearch(); break;
-      case "settings":   notify("Definições em breve", "info"); break;
+      case "settings":   setShowSettings(true); break;
     }
   }
 

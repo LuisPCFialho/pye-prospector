@@ -56,6 +56,15 @@ export default function TableView() {
       return sortDesc ? (vb as number) - (va as number) : (va as number) - (vb as number);
     }), [buildings, leads, sortKey, sortDesc]);
 
+  const stats = useMemo(() => {
+    let totalArea = 0, totalKwp = 0;
+    for (const b of buildings) {
+      totalArea += b.areaSqm;
+      totalKwp += leads[b.id]?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+    }
+    return { count: buildings.length, totalArea, totalKwp: Math.round(totalKwp) };
+  }, [buildings, leads]);
+
   const Th = ({ label, k }: { label: string; k?: SortKey }) => (
     <th
       className={`px-4 py-2.5 text-left text-[11px] font-medium text-[#8892a4] uppercase tracking-wide whitespace-nowrap ${k ? "cursor-pointer hover:text-[#c8d0df]" : ""}`}
@@ -81,14 +90,18 @@ export default function TableView() {
           <span>Back to Map</span>
         </button>
         <span className="text-[#1e1f30]">|</span>
-        <span className="text-xs text-[#8892a4]">{rows.length.toLocaleString("pt-PT")} locations</span>
+        <span className="text-xs text-[#8892a4]">{stats.count.toLocaleString("pt-PT")} edifícios</span>
+        <span className="text-[#1e1f30]">·</span>
+        <span className="text-xs text-[#8892a4]">{(stats.totalArea / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 0 })}k m²</span>
+        <span className="text-[#1e1f30]">·</span>
+        <span className="text-xs text-[#f97316]">{stats.totalKwp.toLocaleString("pt-PT", { maximumFractionDigits: 0 })} kWp total</span>
         <div className="flex-1" />
         <button
           type="button"
           onClick={handleExport}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f97316] hover:bg-[#ea6d0e] text-white text-xs font-semibold rounded-lg transition-colors"
         >
-          Export
+          Export CSV
         </button>
       </div>
 
