@@ -16,6 +16,7 @@ export default function LocationDetails() {
   const setShowStreetView = useAppStore((s) => s.setShowStreetView);
   const upsertLead = useAppStore((s) => s.upsertLead);
   const setLeads = useAppStore((s) => s.setLeads);
+  const notify = useAppStore((s) => s.notify);
 
   const [tab, setTab] = useState<Tab>("flag");
   const [calcingSolar, setCalcingSolar] = useState(false);
@@ -80,7 +81,10 @@ export default function LocationDetails() {
       await duplicateLead(lead.id);
       const all = await getAllLeads();
       setLeads(all);
-    } catch (e) { console.warn(e); }
+      notify("Lead duplicado", "success");
+    } catch (e) {
+      notify(`Erro ao duplicar: ${e instanceof Error ? e.message : "DB indisponível"}`, "error");
+    }
   }
 
   const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);

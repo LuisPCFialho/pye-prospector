@@ -13,6 +13,7 @@ export default function TableView() {
   const leads          = useAppStore((s) => s.leads);
   const selectBuilding = useAppStore((s) => s.selectBuilding);
   const setViewMode    = useAppStore((s) => s.setViewMode);
+  const notify         = useAppStore((s) => s.notify);
   const buildings      = useFilteredBuildings();
 
   const [sortKey, setSortKey]   = useState<SortKey>("area");
@@ -31,7 +32,10 @@ export default function TableView() {
       const a    = document.createElement("a");
       a.href = url; a.download = "pye_leads.csv"; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
+      notify("CSV exportado", "success");
+    } catch (e) {
+      notify(`Erro ao exportar CSV: ${e instanceof Error ? e.message : "DB indisponível"}`, "error");
+    }
   }
 
   // buildings already filtered by useFilteredBuildings hook

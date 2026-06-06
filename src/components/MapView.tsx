@@ -123,6 +123,8 @@ export default function MapView() {
   const setLoadingBuildings = useAppStore((s) => s.setLoadingBuildings);
   const setLoadError        = useAppStore((s) => s.setLoadError);
   const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
+  const notify              = useAppStore((s) => s.notify);
+  const isLoadingBuildings  = useAppStore((s) => s.isLoadingBuildings);
 
   // Filtered buildings from shared hook (memoized, single source of truth)
   const visibleBuildings = useFilteredBuildings();
@@ -262,16 +264,20 @@ export default function MapView() {
         const inside = all.filter((b) =>
           turf.booleanPointInPolygon(turf.point([b.centroidLon, b.centroidLat]), poly),
         );
-        await saveBuildingsBatch(inside);
-        addBuildings(inside);
-        setLeads(await getAllLeads());
+        if (inside.length === 0) {
+          notify("Nenhum edifício dentro da área desenhada.", "warning");
+        } else {
+          addBuildings(inside);
+          notify(`${inside.length} edifícios na área desenhada`, "success");
+          try { await saveBuildingsBatch(inside); setLeads(await getAllLeads()); } catch { /* browser */ }
+        }
       } catch (err) {
-        setLoadError(err instanceof Error ? err.message : "Erro Overpass");
+        notify(`Erro ao carregar área: ${err instanceof Error ? err.message : "Overpass"}`, "error");
       } finally {
         setLoadingBuildings(false);
       }
     },
-    [addBuildings, setLeads, setDrawMode, setLoadingBuildings, setLoadError],
+    [addBuildings, setLeads, setDrawMode, setLoadingBuildings, notify],
   );
 
   // ESC to cancel draw
@@ -340,6 +346,21 @@ export default function MapView() {
       {drawMode === "polygon" && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-[#f97316]/95 text-white text-xs font-semibold px-5 py-2 rounded-full shadow-lg pointer-events-none">
           Click para adicionar pontos · Double-click para terminar · ESC para cancelar
+        </div>
+      )}
+
+      {/* Loading overlay */}
+      {isLoadingBuildings && (
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-2 bg-[#13131f]/95 border border-[#1e1f30] text-[#c8d0df] text-xs px-3 py-2 rounded-lg shadow-lg">
+          <span className="w-3 h-3 border-2 border-[#f97316] border-t-transparent rounded-full animate-spin" />
+          A carregar edifícios…
+        </div>
+      )}
+
+      {/* Empty state: no buildings loaded yet */}
+      {totalBuildings === 0 && !isLoadingBuildings && drawMode === "none" && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 bg-[#13131f]/90 border border-[#1e1f30] text-[#8892a4] text-xs px-4 py-2.5 rounded-lg shadow-lg text-center pointer-events-none max-w-xs">
+          Aproxima o mapa de uma zona industrial e usa <span className="text-[#f97316] font-semibold">Get Rooftops</span> para carregar edifícios.
         </div>
       )}
 

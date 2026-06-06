@@ -6,6 +6,7 @@ import { saveLead } from "../db/database";
 import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
 import { openExternal, streetViewUrl, googleVerifyUrl } from "../lib/openExternal";
 import { resolveCompany, getCachedResolve } from "../lib/companyResolver";
+import { validateField } from "../lib/validation";
 import type { CompanyCandidate, Lead } from "../types/building";
 
 type Tab = "flag" | "solar" | "drop";
@@ -27,6 +28,7 @@ export default function LocationSummary() {
   const setShowDropDialog   = useAppStore((s) => s.setShowDropDialog);
   const upsertLead          = useAppStore((s) => s.upsertLead);
   const setSuccessMessage   = useAppStore((s) => s.setSuccessMessage);
+  const notify              = useAppStore((s) => s.notify);
 
   const [tab, setTab]                   = useState<Tab>("flag");
   const [calcingSolar, setCalcing]       = useState(false);
@@ -89,8 +91,18 @@ export default function LocationSummary() {
   }
 
   async function saveField(field: string, value: string) {
-    const updated = { ...ensureLead(), [field]: value, updatedAt: new Date().toISOString() };
-    try { await saveLead(updated as Parameters<typeof saveLead>[0]); } catch { /* no tauri */ }
+    // Validate + normalize at the boundary
+    const result = validateField(field, value);
+    if ("error" in result) {
+      notify(result.error, "error");
+      return;
+    }
+    const updated = { ...ensureLead(), [field]: result.value, updatedAt: new Date().toISOString() };
+    try {
+      await saveLead(updated as Parameters<typeof saveLead>[0]);
+    } catch {
+      // DB unavailable (browser) — keep in memory; only warn for genuine field saves
+    }
     upsertLead(updated as Parameters<typeof saveLead>[0]);
     setEditing(null);
   }
@@ -109,6 +121,14 @@ export default function LocationSummary() {
       };
       try { await saveLead(updated); } catch { /* no tauri */ }
       upsertLead(updated);
+      notify(
+        result.source === "regional-estimate"
+          ? "Solar calculado (estimativa regional — PVGIS indisponível)"
+          : "Solar calculado (PVGIS)",
+        result.source === "regional-estimate" ? "warning" : "success",
+      );
+    } catch (e) {
+      notify(`Erro ao calcular solar: ${e instanceof Error ? e.message : "desconhecido"}`, "error");
     } finally {
       setCalcing(false);
     }

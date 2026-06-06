@@ -41,11 +41,10 @@ export async function saveBuilding(b: BuildingFeature): Promise<void> {
 export async function saveBuildingsBatch(buildings: BuildingFeature[]): Promise<void> {
   if (buildings.length === 0) return;
   const db = await getDB();
-  // Process in chunks of 50 to avoid hitting SQLite parameter limits
-  const CHUNK = 50;
-  for (let i = 0; i < buildings.length; i += CHUNK) {
-    const chunk = buildings.slice(i, i + CHUNK);
-    for (const b of chunk) {
+  // Wrap in a transaction: atomic + dramatically faster than N autocommits
+  try {
+    await db.execute("BEGIN TRANSACTION");
+    for (const b of buildings) {
       await db.execute(
         `INSERT OR IGNORE INTO buildings
            (id, osm_id, source, geometry, centroid_lon, centroid_lat,
@@ -60,6 +59,10 @@ export async function saveBuildingsBatch(buildings: BuildingFeature[]): Promise<
         ],
       );
     }
+    await db.execute("COMMIT");
+  } catch (e) {
+    try { await db.execute("ROLLBACK"); } catch { /* ignore */ }
+    throw e;
   }
 }
 

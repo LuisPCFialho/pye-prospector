@@ -6,6 +6,13 @@ import type {
 
 export type ViewMode = "map" | "table";
 export type DrawMode = "none" | "polygon";
+export type ToastSeverity = "success" | "error" | "warning" | "info";
+
+export interface Toast {
+  id: string;
+  message: string;
+  severity: ToastSeverity;
+}
 
 interface AppState {
   viewMode: ViewMode;
@@ -31,6 +38,7 @@ interface AppState {
   isLoadingBuildings: boolean;
   loadError: string | null;
   successMessage: string | null;
+  toasts: Toast[];
 
   filterSolarStatus: SolarStatus | "all";
   filterPipelineStage: PipelineStage | "all";
@@ -80,6 +88,9 @@ interface AppState {
   setFilterOnlyFlagged: (v: boolean) => void;
   setFilterOnlyDropped: (v: boolean) => void;
   setFilterExcludeDropped: (v: boolean) => void;
+
+  notify: (message: string, severity?: ToastSeverity) => void;
+  dismissToast: (id: string) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -104,6 +115,7 @@ export const useAppStore = create<AppState>((set) => ({
   isLoadingBuildings: false,
   loadError: null,
   successMessage: null,
+  toasts: [],
 
   filterSolarStatus: "all",
   filterPipelineStage: "all",
@@ -163,4 +175,11 @@ export const useAppStore = create<AppState>((set) => ({
   setFilterOnlyFlagged: (v) => set({ filterOnlyFlagged: v }),
   setFilterOnlyDropped: (v) => set({ filterOnlyDropped: v }),
   setFilterExcludeDropped: (v) => set({ filterExcludeDropped: v }),
+
+  notify: (message, severity = "info") =>
+    set((s) => ({
+      toasts: [...s.toasts, { id: crypto.randomUUID(), message, severity }].slice(-4),
+    })),
+  dismissToast: (id) =>
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));

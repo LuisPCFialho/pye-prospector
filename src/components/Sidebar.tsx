@@ -43,7 +43,7 @@ export default function Sidebar() {
   const setDrawMode         = useAppStore((s) => s.setDrawMode);
   const setLoadingBuildings = useAppStore((s) => s.setLoadingBuildings);
   const setLoadError        = useAppStore((s) => s.setLoadError);
-  const setSuccessMessage   = useAppStore((s) => s.setSuccessMessage);
+  const notify              = useAppStore((s) => s.notify);
   const addBuildings        = useAppStore((s) => s.addBuildings);
   const setLeads            = useAppStore((s) => s.setLeads);
   const setViewMode         = useAppStore((s) => s.setViewMode);
@@ -54,9 +54,8 @@ export default function Sidebar() {
     const bbox = getViewportBBox();
     if (!bbox) return;
     const bboxAreaDeg = (bbox.maxLon - bbox.minLon) * (bbox.maxLat - bbox.minLat);
-    if (bboxAreaDeg > 0.04) {
-      setLoadError("Área demasiado grande. Aproxima o mapa (zoom ≥ 14).");
-      setTimeout(() => setLoadError(null), 4000);
+    if (bboxAreaDeg > 0.25) {
+      notify("Área demasiado grande. Aproxima o mapa um pouco (zoom ≥ 12).", "warning");
       return;
     }
     setLoadingBuildings(true);
@@ -64,27 +63,34 @@ export default function Sidebar() {
     try {
       const fetched = await fetchBuildingsInBBox(bbox);
       if (fetched.length === 0) {
-        setLoadError("Nenhum edifício encontrado nesta área.");
-        setTimeout(() => setLoadError(null), 4000);
+        notify("Nenhum edifício encontrado nesta área. Tenta outra zona ou afasta o zoom.", "warning");
       } else {
         addBuildings(fetched);
-        setSuccessMessage(`${fetched.length} edifícios carregados`);
-        setTimeout(() => setSuccessMessage(null), 3000);
-        try { await saveBuildingsBatch(fetched); setLeads(await getAllLeads()); } catch { /* no Tauri */ }
+        const ci = fetched.filter((b) => (b.ciScore ?? 0) >= 0.5).length;
+        notify(`${fetched.length} edifícios carregados (${ci} comerciais/industriais)`, "success");
+        try {
+          await saveBuildingsBatch(fetched);
+          setLeads(await getAllLeads());
+        } catch { /* no Tauri (browser) — kept in memory */ }
       }
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Erro Overpass");
+      notify(`Erro ao carregar edifícios: ${e instanceof Error ? e.message : "Overpass"}`, "error");
     } finally {
       setLoadingBuildings(false);
     }
   }
 
   function handleExportExcel() {
+    if (buildings.length === 0) {
+      notify("Sem edifícios para exportar. Usa 'Get Rooftops' primeiro.", "warning");
+      return;
+    }
     try {
       exportToExcel({ buildings, leads, notes });
-      setSuccessMessage("Excel exportado");
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch { /* ignore */ }
+      notify(`Excel exportado (${buildings.length} edifícios)`, "success");
+    } catch (e) {
+      notify(`Erro ao exportar Excel: ${e instanceof Error ? e.message : "desconhecido"}`, "error");
+    }
   }
 
   function handleGoToSearch() {
@@ -114,7 +120,7 @@ export default function Sidebar() {
         setViewMode("map");
         break;
       case "go-to":      handleGoToSearch(); break;
-      case "settings":   setSuccessMessage("Definições em breve"); setTimeout(() => setSuccessMessage(null), 2000); break;
+      case "settings":   notify("Definições em breve", "info"); break;
     }
   }
 

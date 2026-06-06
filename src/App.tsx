@@ -12,6 +12,7 @@ import TableView from "./components/TableView";
 import SearchFilter from "./components/SearchFilter";
 import MapSearch from "./components/MapSearch";
 import DropLocationDialog from "./components/DropLocationDialog";
+import ToastContainer from "./components/ToastContainer";
 
 export default function App() {
   const viewMode            = useAppStore((s) => s.viewMode);
@@ -77,6 +78,7 @@ export default function App() {
         )}
       </main>
       </div>
+      <ToastContainer />
     </div>
   );
 }
