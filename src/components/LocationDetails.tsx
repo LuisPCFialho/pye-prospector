@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
-import { saveLead, duplicateLead, getAllLeads } from "../db/database";
+import { saveLead, duplicateLead, getAllLeads, addActivity } from "../db/database";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
 import { openExternal, streetViewUrl, googleMapsUrl, googleVerifyUrl } from "../lib/openExternal";
@@ -86,12 +86,19 @@ export default function LocationDetails() {
   async function handleField(field: string, value: string | number | undefined) {
     if (!building) return;
     const base = ensureLead();
+    const prevStage = base.pipelineStage;
     const updated = {
       ...base,
       [field]: value,
       updatedAt: new Date().toISOString(),
     } as typeof base & Record<string, unknown>;
-    try { await saveLead(updated as Parameters<typeof saveLead>[0]); } catch {}
+    try {
+      await saveLead(updated as Parameters<typeof saveLead>[0]);
+      // Log a stage-change activity for the pipeline timeline
+      if (field === "pipelineStage" && value !== prevStage) {
+        await addActivity(base.id, "stage_change", undefined, JSON.stringify({ from: prevStage, to: value }));
+      }
+    } catch { /* no tauri */ }
     upsertLead(updated as Parameters<typeof saveLead>[0]);
   }
 

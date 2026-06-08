@@ -7,6 +7,7 @@ import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPh
 import { openExternal, streetViewUrl, googleVerifyUrl } from "../lib/openExternal";
 import { resolveCompany, getCachedResolve } from "../lib/companyResolver";
 import { validateField } from "../lib/validation";
+import { scoreLead, scoreColor } from "../lib/leadScore";
 import type { CompanyCandidate, Lead } from "../types/building";
 
 type Tab = "flag" | "solar" | "drop";
@@ -52,7 +53,10 @@ export default function LocationSummary() {
       updatedAt: new Date().toISOString(),
     };
     const filled = autoFillLeadFromOSM(building, base);
-    if (filled !== base && (
+    // Always (re)compute the transparent lead score
+    const newScore = scoreLead(building, filled).score;
+    const changed =
+      filled !== base ||
       filled.company !== base.company ||
       filled.website !== base.website ||
       filled.telephone !== base.telephone ||
@@ -60,10 +64,12 @@ export default function LocationSummary() {
       filled.nif !== base.nif ||
       filled.address !== base.address ||
       filled.buildingUse !== base.buildingUse ||
-      filled.solarStatus !== base.solarStatus
-    )) {
-      saveLead(filled).catch(() => {});
-      upsertLead(filled);
+      filled.solarStatus !== base.solarStatus ||
+      newScore !== base.score;
+    if (changed) {
+      const scored = { ...filled, score: newScore };
+      saveLead(scored).catch(() => {});
+      upsertLead(scored);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [building?.id]);
@@ -180,8 +186,24 @@ export default function LocationSummary() {
     <div className="absolute top-4 right-4 z-20 w-[300px] bg-[#13131f] border border-[#1e1f30] rounded-xl shadow-2xl overflow-hidden flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1f30]">
-        <span className="text-sm font-semibold text-white">Location Summary</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-white">Location Summary</span>
+          {(() => {
+            const s = lead?.score ?? scoreLead(building, lead).score;
+            return (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-slate-950"
+                style={{ background: scoreColor(s) }}
+                title="Pontuação do lead (0-100)"
+              >
+                {s}
+              </span>
+            );
+          })()}
+        </div>
         <button
+          type="button"
+          aria-label="Fechar"
           onClick={() => selectBuilding(null)}
           className="w-6 h-6 rounded flex items-center justify-center text-[#8892a4] hover:text-white hover:bg-[#1e1f30] transition-colors"
         >
@@ -410,7 +432,19 @@ export default function LocationSummary() {
 
       {/* Footer */}
       <div className="px-4 pb-3 pt-1 border-t border-[#1e1f30] space-y-1">
+        {/* Follow-up date */}
+        <div className="flex items-center gap-2 py-1">
+          <span className="text-[10px] text-[#8892a4] uppercase tracking-wide shrink-0">Próxima ação</span>
+          <input
+            type="date"
+            aria-label="Data da próxima ação"
+            value={lead?.nextActionDate ?? ""}
+            onChange={(e) => saveField("nextActionDate", e.target.value)}
+            className="flex-1 bg-[#1e1f30] border border-[#2a2b3d] rounded px-2 py-0.5 text-[11px] text-white focus:outline-none focus:border-[#f97316]/50 [color-scheme:dark]"
+          />
+        </div>
         <button
+          type="button"
           onClick={() => setShowLocationDetails(true)}
           className="w-full flex items-center justify-between text-[12px] text-[#8892a4] hover:text-white py-1 transition-colors"
         >

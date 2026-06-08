@@ -68,6 +68,8 @@ interface AppState {
   selectBuilding: (id: string | null) => void;
   setSelectionIds: (ids: string[]) => void;
   setSelectionCursor: (n: number) => void;
+  toggleSelection: (id: string) => void;
+  clearSelection: () => void;
 
   setShowLocationDetails: (v: boolean) => void;
   setShowStreetView: (v: boolean) => void;
@@ -157,6 +159,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   setSelectionIds: (ids) => set({ selectionIds: ids, selectionCursor: 0 }),
   setSelectionCursor: (n) => set({ selectionCursor: n }),
+  toggleSelection: (id) =>
+    set((s) => ({
+      selectionIds: s.selectionIds.includes(id)
+        ? s.selectionIds.filter((x) => x !== id)
+        : [...s.selectionIds, id],
+    })),
+  clearSelection: () => set({ selectionIds: [] }),
 
   setShowLocationDetails: (v) => set({ showLocationDetails: v }),
   setShowStreetView: (v) => set({ showStreetView: v }),

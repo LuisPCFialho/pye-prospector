@@ -58,6 +58,12 @@ pub fn run() {
             sql: include_str!("../migrations/0003_missing_fields.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "crm_features_territories_activities_contacts_followups",
+            sql: include_str!("../migrations/0004_crm_features.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

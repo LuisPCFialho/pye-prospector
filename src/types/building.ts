@@ -119,6 +119,11 @@ export interface Lead {
   hasExistingPv?: "yes" | "no" | "unknown";
   dropReason?: DropReason;
   flagged?: boolean;
+  territoryId?: string;
+  nextActionDate?: string;
+  nextActionNote?: string;
+  /** Transparent 0-100 lead score (computed, persisted). */
+  score?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +133,36 @@ export interface LeadNote {
   leadId: string;
   author: string;
   body: string;
+  createdAt: string;
+}
+
+export interface Territory {
+  id: string;
+  name: string;
+  polygonGeoJSON: GeoJSON.Polygon;
+  bbox: [number, number, number, number];
+  notes?: string;
+  createdAt: string;
+}
+
+export interface LeadContact {
+  id: string;
+  leadId: string;
+  name: string;
+  role?: string;
+  phone?: string;
+  email?: string;
+  isPrimary: boolean;
+}
+
+export type ActivityType = "call" | "email" | "meeting" | "note" | "stage_change" | "created";
+
+export interface LeadActivity {
+  id: string;
+  leadId: string;
+  type: ActivityType;
+  body?: string;
+  meta?: string;
   createdAt: string;
 }
 

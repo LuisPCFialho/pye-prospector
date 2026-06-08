@@ -1,5 +1,9 @@
 import Database from "@tauri-apps/plugin-sql";
-import type { BuildingFeature, Lead, LeadNote, SolarStatus, PipelineStage, BuildingUse, DropReason } from "../types/building";
+import * as turf from "@turf/turf";
+import type {
+  BuildingFeature, Lead, LeadNote, SolarStatus, PipelineStage, BuildingUse, DropReason,
+  Territory, LeadContact, LeadActivity, ActivityType,
+} from "../types/building";
 
 type DB = Awaited<ReturnType<typeof Database.load>>;
 let _db: DB | null = null;
@@ -122,6 +126,8 @@ interface DBLead {
   nif: string | null; building_use: string | null;
   has_existing_pv: string | null;
   flagged: number | null; drop_reason: string | null;
+  territory_id: string | null; next_action_date: string | null; next_action_note: string | null;
+  score: number | null;
   created_at: string; updated_at: string;
 }
 
@@ -147,6 +153,10 @@ function rowToLead(r: DBLead): Lead {
     hasExistingPv: r.has_existing_pv as Lead["hasExistingPv"] ?? undefined,
     flagged: r.flagged === 1 ? true : false,
     dropReason: r.drop_reason as DropReason ?? undefined,
+    territoryId: r.territory_id ?? undefined,
+    nextActionDate: r.next_action_date ?? undefined,
+    nextActionNote: r.next_action_note ?? undefined,
+    score: r.score ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -163,8 +173,9 @@ export async function saveLead(lead: Lead): Promise<void> {
         company, telephone, website, email, notes, tags, owner,
         nif, building_use, has_existing_pv,
         flagged, drop_reason,
+        territory_id, next_action_date, next_action_note, score,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(id) DO UPDATE SET
         building_id = excluded.building_id,
         address = excluded.address,
@@ -185,6 +196,10 @@ export async function saveLead(lead: Lead): Promise<void> {
         has_existing_pv = excluded.has_existing_pv,
         flagged = excluded.flagged,
         drop_reason = excluded.drop_reason,
+        territory_id = excluded.territory_id,
+        next_action_date = excluded.next_action_date,
+        next_action_note = excluded.next_action_note,
+        score = excluded.score,
         updated_at = datetime('now')`,
     [
       lead.id, lead.buildingId, lead.address ?? null,
@@ -197,6 +212,8 @@ export async function saveLead(lead: Lead): Promise<void> {
       lead.nif ?? null, lead.buildingUse ?? null,
       lead.hasExistingPv ?? null,
       lead.flagged === true ? 1 : 0, lead.dropReason ?? null,
+      lead.territoryId ?? null, lead.nextActionDate ?? null, lead.nextActionNote ?? null,
+      lead.score ?? null,
       lead.createdAt ?? new Date().toISOString(),
     ],
   );
@@ -211,6 +228,154 @@ export async function getAllLeads(): Promise<Lead[]> {
 export async function deleteLead(leadId: string): Promise<void> {
   const db = await getDB();
   await db.execute("DELETE FROM leads WHERE id = ?", [leadId]);
+}
+
+// ── Territories ───────────────────────────────────────────────────────────────
+
+interface DBTerritory {
+  id: string; name: string; polygon: string; bbox: string;
+  notes: string | null; created_at: string;
+}
+
+function rowToTerritory(r: DBTerritory): Territory | null {
+  try {
+    const bb = r.bbox.split(",").map(Number) as [number, number, number, number];
+    return {
+      id: r.id, name: r.name,
+      polygonGeoJSON: JSON.parse(r.polygon),
+      bbox: bb,
+      notes: r.notes ?? undefined,
+      createdAt: r.created_at,
+    };
+  } catch { return null; }
+}
+
+export async function saveTerritory(name: string, poly: GeoJSON.Polygon, notes?: string): Promise<Territory> {
+  const db = await getDB();
+  const id = crypto.randomUUID();
+  const bb = turf.bbox(poly);
+  await db.execute(
+    "INSERT INTO territories (id, name, polygon, bbox, notes) VALUES (?, ?, ?, ?, ?)",
+    [id, name, JSON.stringify(poly), bb.join(","), notes ?? null],
+  );
+  return { id, name, polygonGeoJSON: poly, bbox: bb as [number, number, number, number], notes, createdAt: new Date().toISOString() };
+}
+
+export async function getAllTerritories(): Promise<Territory[]> {
+  const db = await getDB();
+  const rows = await db.select<DBTerritory[]>("SELECT * FROM territories ORDER BY created_at DESC");
+  return rows.map(rowToTerritory).filter((t): t is Territory => t !== null);
+}
+
+export async function deleteTerritory(id: string): Promise<void> {
+  const db = await getDB();
+  await db.execute("UPDATE leads SET territory_id = NULL WHERE territory_id = ?", [id]);
+  await db.execute("DELETE FROM territories WHERE id = ?", [id]);
+}
+
+// ── Bulk operations (driven by selectionIds) ──────────────────────────────────
+
+async function bulkUpdate(buildingIds: string[], setSql: string, value: unknown): Promise<void> {
+  if (buildingIds.length === 0) return;
+  const db = await getDB();
+  try {
+    await db.execute("BEGIN TRANSACTION");
+    for (const id of buildingIds) {
+      await db.execute(
+        `UPDATE leads SET ${setSql}, updated_at = datetime('now') WHERE building_id = ?`,
+        [value, id],
+      );
+    }
+    await db.execute("COMMIT");
+  } catch (e) {
+    try { await db.execute("ROLLBACK"); } catch { /* ignore */ }
+    throw e;
+  }
+}
+
+export const bulkSetStage = (ids: string[], stage: PipelineStage) =>
+  bulkUpdate(ids, "pipeline_stage = ?", stage);
+export const bulkSetFlag = (ids: string[], flagged: boolean) =>
+  bulkUpdate(ids, "flagged = ?", flagged ? 1 : 0);
+export const bulkSetTerritory = (ids: string[], territoryId: string | null) =>
+  bulkUpdate(ids, "territory_id = ?", territoryId);
+
+// ── Activities ────────────────────────────────────────────────────────────────
+
+interface DBActivity { id: string; lead_id: string; type: string; body: string | null; meta: string | null; created_at: string; }
+
+export async function addActivity(leadId: string, type: ActivityType, body?: string, meta?: string): Promise<void> {
+  const db = await getDB();
+  await db.execute(
+    "INSERT INTO lead_activities (id, lead_id, type, body, meta) VALUES (?, ?, ?, ?, ?)",
+    [crypto.randomUUID(), leadId, type, body ?? null, meta ?? null],
+  );
+}
+
+export async function getActivities(leadId: string): Promise<LeadActivity[]> {
+  const db = await getDB();
+  const rows = await db.select<DBActivity[]>(
+    "SELECT * FROM lead_activities WHERE lead_id = ? ORDER BY created_at DESC", [leadId],
+  );
+  return rows.map((r) => ({
+    id: r.id, leadId: r.lead_id, type: r.type as ActivityType,
+    body: r.body ?? undefined, meta: r.meta ?? undefined, createdAt: r.created_at,
+  }));
+}
+
+// ── Contacts ──────────────────────────────────────────────────────────────────
+
+interface DBContact { id: string; lead_id: string; name: string; role: string | null; phone: string | null; email: string | null; is_primary: number; }
+
+export async function getContacts(leadId: string): Promise<LeadContact[]> {
+  const db = await getDB();
+  const rows = await db.select<DBContact[]>(
+    "SELECT * FROM lead_contacts WHERE lead_id = ? ORDER BY is_primary DESC, name", [leadId],
+  );
+  return rows.map((r) => ({
+    id: r.id, leadId: r.lead_id, name: r.name,
+    role: r.role ?? undefined, phone: r.phone ?? undefined, email: r.email ?? undefined,
+    isPrimary: r.is_primary === 1,
+  }));
+}
+
+export async function addContact(c: Omit<LeadContact, "id">): Promise<LeadContact> {
+  const db = await getDB();
+  const id = crypto.randomUUID();
+  await db.execute(
+    "INSERT INTO lead_contacts (id, lead_id, name, role, phone, email, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [id, c.leadId, c.name, c.role ?? null, c.phone ?? null, c.email ?? null, c.isPrimary ? 1 : 0],
+  );
+  return { ...c, id };
+}
+
+export async function deleteContact(id: string): Promise<void> {
+  const db = await getDB();
+  await db.execute("DELETE FROM lead_contacts WHERE id = ?", [id]);
+}
+
+// ── Follow-ups & analytics ────────────────────────────────────────────────────
+
+export async function getDueFollowUps(): Promise<Lead[]> {
+  const db = await getDB();
+  const rows = await db.select<DBLead[]>(
+    `SELECT * FROM leads
+       WHERE next_action_date IS NOT NULL
+         AND date(next_action_date) <= date('now')
+         AND pipeline_stage NOT IN ('won','lost')
+       ORDER BY next_action_date ASC`,
+  );
+  return rows.map(rowToLead);
+}
+
+export interface FunnelRow { stage: string; n: number; kwp: number; }
+
+export async function getFunnel(): Promise<FunnelRow[]> {
+  const db = await getDB();
+  return db.select<FunnelRow[]>(
+    `SELECT pipeline_stage AS stage, COUNT(*) AS n, ROUND(COALESCE(SUM(estimated_kwp),0),1) AS kwp
+       FROM leads GROUP BY pipeline_stage`,
+  );
 }
 
 export async function duplicateLead(leadId: string): Promise<Lead | null> {
