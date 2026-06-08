@@ -1,0 +1,3039 @@
+{
+  "phases": [
+    {
+      "number": 6,
+      "theme": "Solar Engineering Depth",
+      "goal": "Turn the prospecting solar math from a single hardcoded scenario into a professional-grade engineering toolkit: optimal angles, real usable-area geometry, panel layout, shading, self-consumption/injection split, battery sizing, and three financing models (CAPEX/OPEX-PPA/Lease) with NPV/IRR/LCOE.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Add `angle`/`aspect`/`loss`/`optimalAngles` pass-through to fetchPVGIS params (already typed, wire UI values in)",
+          "files": "src/lib/pvgis.ts",
+          "category": "solar"
+        },
+        {
+          "n": 2,
+          "title": "Support PVGIS `optimalangles=1` to return optimal tilt+azimuth; parse `inputs.mounting_system.fixed.slope/azimuth` from response",
+          "files": "src/lib/pvgis.ts",
+          "category": "solar"
+        },
+        {
+          "n": 3,
+          "title": "Support PVGIS `optimalinclination=1` (optimize tilt only, keep user azimuth)",
+          "files": "src/lib/pvgis.ts",
+          "category": "solar"
+        },
+        {
+          "n": 4,
+          "title": "Add tilt slider input (0-60°) to Solar tab, default 30°, recompute PVGIS on change",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 5,
+          "title": "Add azimuth slider input (-180..180, 0=south) to Solar tab with E/S/W markers",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 6,
+          "title": "Add 'Otimizar ângulos' toggle in Solar tab that requests optimalangles and displays returned tilt/azimuth",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 7,
+          "title": "Persist tilt/azimuth/loss on the lead (new columns tilt_deg, azimuth_deg, loss_pct)",
+          "files": "src-tauri/migrations/0004_*.sql, src-tauri/src/lib.rs, src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 8,
+          "title": "Fallback latitude-based optimal tilt heuristic (≈lat-5, Lisbon ~33°) when PVGIS unreachable",
+          "files": "src/lib/pvgis.ts",
+          "category": "solar"
+        },
+        {
+          "n": 9,
+          "title": "Flat-roof tilt default of 10-15° with ballast-mount assumption flag",
+          "files": "src/lib/pvgis.ts, src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 10,
+          "title": "Replace flat 0.65 usable fraction with perimeter-setback model: (area - perim*0.7)",
+          "files": "src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 11,
+          "title": "Add turf-based perimeter computation helper `polygonPerimeterM(coords)`",
+          "files": "src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 12,
+          "title": "Add compactness factor (area/bboxArea) to usable-area heuristic: *(0.7+0.3*compactness)",
+          "files": "src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 13,
+          "title": "Per-sector keep factor (logistics 0.85 vs office 0.65) keyed off BuildingUse in areaToKwp",
+          "files": "src/lib/geodesy.ts, src/types/building.ts",
+          "category": "solar"
+        },
+        {
+          "n": 14,
+          "title": "Add GCR-based module count: gcr=1/(cos(t)+sin(t)/tan(90-lat-23.45)) for tilted rows",
+          "files": "src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 15,
+          "title": "Use flush GCR≈0.9 for flat-mount, tilted GCR≈0.45-0.55 at 15° in module estimate",
+          "files": "src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 16,
+          "title": "Wire estimatePeakPower to call areaToKwp (single source) instead of duplicate 0.18 W/m² heuristic",
+          "files": "src/lib/pvgis.ts, src/lib/geodesy.ts",
+          "category": "refactor"
+        },
+        {
+          "n": 17,
+          "title": "Show usable m², module count, and GCR breakdown in Solar tab",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 18,
+          "title": "Add module spec inputs (Wp, module area m²) in Solar tab, default 550Wp/2.58m²",
+          "files": "src/components/LocationDetails.tsx, src/lib/geodesy.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 19,
+          "title": "Add 'Layout' sub-panel rendering a grid of modules over the roof polygon SVG mock-up",
+          "files": "src/components/PanelLayout.tsx (new), src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 20,
+          "title": "Compute oriented bounding box of polygon to align panel rows to longest roof edge",
+          "files": "src/lib/geodesy.ts",
+          "category": "solar"
+        },
+        {
+          "n": 21,
+          "title": "Estimate DC string voltage/current from module Voc/Isc and count (basic string sizing)",
+          "files": "src/lib/panelLayout.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 22,
+          "title": "Suggest inverter size from kWp with DC/AC ratio 1.1-1.25",
+          "files": "src/lib/panelLayout.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 23,
+          "title": "Generate a Bill of Materials (modules, inverter, mounting, cabling) object for export",
+          "files": "src/lib/panelLayout.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 24,
+          "title": "Add shading loss % input (0-30%) in Solar tab that feeds PVGIS `loss`",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 25,
+          "title": "Show 'com sombreamento' vs 'ótimo' side-by-side scenarios in Solar tab",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 26,
+          "title": "Estimate neighbour-shading from OSM building height/levels within 50m (atan(dH/D) vs sun elevation)",
+          "files": "src/lib/shading.ts (new), src/lib/overpass.ts",
+          "category": "solar"
+        },
+        {
+          "n": 27,
+          "title": "Parse OSM `height` and `building:levels` tags (levels*3m) into BuildingFeature.heightM",
+          "files": "src/lib/overpass.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 28,
+          "title": "Auto-suggest 5-15% shading loss when a taller building sits to the south",
+          "files": "src/lib/shading.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 29,
+          "title": "Persist shading_loss_pct on lead and reuse on reopen",
+          "files": "src-tauri/migrations/0004_*.sql, src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 30,
+          "title": "Replace SolarFinance self-consumption flat 0.75 with computed SCR from monthly profile",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 31,
+          "title": "Add sector load-shape table (12 monthly fractions) per BuildingUse",
+          "files": "src/lib/loadProfile.ts (new), src/types/building.ts",
+          "category": "solar"
+        },
+        {
+          "n": 32,
+          "title": "Compute self-consumed kWh = Σ min(prod_m, cons_m) from monthlyKwh vs sector load shape",
+          "files": "src/lib/solarFinance.ts, src/lib/loadProfile.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 33,
+          "title": "Split savings: self*retail + injected*injectionPrice (default 0.05 €/kWh OMIE)",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 34,
+          "title": "Add annualConsumptionKwh input on lead (drives SCR and self-sufficiency)",
+          "files": "src/components/LocationDetails.tsx, src/db/database.ts, src/types/building.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 35,
+          "title": "Display self-sufficiency % = selfConsumed/annualConsumption in Solar tab",
+          "files": "src/components/LocationDetails.tsx, src/lib/solarFinance.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 36,
+          "title": "Display self-consumption rate (SCR) % alongside the '~75%' placeholder (now computed)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 37,
+          "title": "Add injection price input (€/kWh) defaulting to 0.05 in financial section",
+          "files": "src/components/LocationDetails.tsx, src/lib/solarFinance.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 38,
+          "title": "Add hourly seriescalc PVGIS option for accurate 8760h SCR when annual consumption known",
+          "files": "src/lib/pvgis.ts, src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 39,
+          "title": "Add battery sizing model: usableKwh ≈ annualKwh*(1-baseSCR)/365 capped at 1-2h of kWp",
+          "files": "src/lib/battery.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 40,
+          "title": "Compute newSCR with battery: baseSCR+(1-baseSCR)*min(usableKwh*0.9,ds)/ds",
+          "files": "src/lib/battery.ts (new), src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 41,
+          "title": "Add battery cost model ≈250-400 €/kWh and feed CAPEX/payback",
+          "files": "src/lib/battery.ts (new), src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 42,
+          "title": "Add battery toggle + capacity (kWh) input in Solar tab showing SCR uplift",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 43,
+          "title": "Add peak-shaving/demand-charge note when battery present (qualitative)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 44,
+          "title": "Add `financingModel` enum type ('capex'|'ppa'|'lease') to SolarFinance inputs",
+          "files": "src/lib/solarFinance.ts, src/types/building.ts",
+          "category": "solar"
+        },
+        {
+          "n": 45,
+          "title": "Implement CAPEX scenario (current) as explicit branch with cash-flow array",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 46,
+          "title": "Implement PPA scenario: capex 0, saving=selfKwh*(retail - escalated ppaPrice), term 15-25yr",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 47,
+          "title": "Implement Lease scenario: saving=billReduction - 12*monthlyFee, buyout at term end",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 48,
+          "title": "Add PPA inputs (ppaPrice ≈0.10, escalatorPct, termYears) to financing UI",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 49,
+          "title": "Add Lease inputs (monthlyFeeEur, termYears, buyoutEur) to financing UI",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 50,
+          "title": "Add financing-model tabs (CAPEX / OPEX-PPA / Lease) in the financial section",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 51,
+          "title": "Add generic `npv(rate, cashflows[])` helper",
+          "files": "src/lib/finance.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 52,
+          "title": "Add `irr(cashflows[])` via bisection (80 iters, bounds 0..1)",
+          "files": "src/lib/finance.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 53,
+          "title": "Replace ad-hoc lifetime loop in solarFinance with shared npv() at WACC 6-8%",
+          "files": "src/lib/solarFinance.ts, src/lib/finance.ts (new)",
+          "category": "refactor"
+        },
+        {
+          "n": 54,
+          "title": "Surface NPV and IRR as ROFields in the financial section",
+          "files": "src/components/LocationDetails.tsx, src/lib/solarFinance.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 55,
+          "title": "Add discount-rate (WACC) input to financial section, default 7%",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 56,
+          "title": "Compute LCOE = (CAPEX + Σ discounted O&M) / Σ discounted E_t with degradation",
+          "files": "src/lib/finance.ts (new), src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 57,
+          "title": "Add O&M assumption (8-12 €/kWp/yr) and inverter replacement at year ~12 to LCOE",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 58,
+          "title": "Display LCOE (€/kWh) vs retail tariff comparison badge",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 59,
+          "title": "Add electricity-price input (default 0.16) to financial UI feeding computeSolarFinance",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 60,
+          "title": "Add inflation/price-escalation input to lifetime savings model",
+          "files": "src/lib/solarFinance.ts, src/components/LocationDetails.tsx",
+          "category": "solar"
+        },
+        {
+          "n": 61,
+          "title": "Add module-degradation input (default 0.5%/yr) overriding ANNUAL_DEGRADATION",
+          "files": "src/lib/solarFinance.ts, src/components/LocationDetails.tsx",
+          "category": "solar"
+        },
+        {
+          "n": 62,
+          "title": "Add sensitivity mini-table: payback at -10%/base/+10% electricity price",
+          "files": "src/components/LocationDetails.tsx, src/lib/solarFinance.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 63,
+          "title": "Show break-even year (cumulative cash-flow crosses zero) on a small bar/line",
+          "files": "src/components/LocationDetails.tsx, src/lib/finance.ts (new)",
+          "category": "solar-ui"
+        },
+        {
+          "n": 64,
+          "title": "Persist financing inputs on lead (financing_model + JSON params) for reproducibility",
+          "files": "src-tauri/migrations/0004_*.sql, src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 65,
+          "title": "Guard payback against Infinity/NaN already done — extend same guard to NPV/IRR/LCOE display",
+          "files": "src/components/LocationDetails.tsx, src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 66,
+          "title": "Replace hardcoded 0.16 in the Solar tab 'Poupança Anual' ROField with computeSolarFinance result",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "bugfix"
+        },
+        {
+          "n": 67,
+          "title": "Make CO₂ factor configurable (default 0.19 kg/kWh PT grid) in Settings",
+          "files": "src/lib/solarFinance.ts, src/components/SettingsModal.tsx",
+          "category": "solar"
+        },
+        {
+          "n": 68,
+          "title": "Add region-aware electricity price defaults (C&I vs SME) toggle",
+          "files": "src/lib/solarFinance.ts, src/components/SettingsModal.tsx",
+          "category": "solar"
+        },
+        {
+          "n": 69,
+          "title": "Show PVGIS variabilityKwh (SD_y) as ± band on annual generation",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 70,
+          "title": "Show source badge: 'PVGIS-SARAH3 (preciso)' vs 'Estimativa regional (±15%)'",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 71,
+          "title": "Log which PVGIS source was used per building to localStorage for later review",
+          "files": "src/lib/pvgis.ts",
+          "category": "data"
+        },
+        {
+          "n": 72,
+          "title": "Cache PVGIS responses by rounded lat/lon+kwp+tilt+aspect to avoid refetch",
+          "files": "src/lib/pvgis.ts",
+          "category": "perf"
+        },
+        {
+          "n": 73,
+          "title": "Add retry with exponential backoff (3x) before PVGIS regional fallback",
+          "files": "src/lib/pvgis.ts",
+          "category": "reliability"
+        },
+        {
+          "n": 74,
+          "title": "Replace console.warn fallback with a toast 'A usar estimativa regional (PVGIS indisponível)'",
+          "files": "src/lib/pvgis.ts, src/components/LocationDetails.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 75,
+          "title": "Improve regionalYield interpolation with a 3-point curve (Algarve/Centro/Norte)",
+          "files": "src/lib/pvgis.ts",
+          "category": "solar"
+        },
+        {
+          "n": 76,
+          "title": "Validate kwp>0 before PVGIS call; skip call and show hint when roof area is 0",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "validation"
+        },
+        {
+          "n": 77,
+          "title": "Add 'Recalcular' button in Solar tab when monthlyKwh already exists (currently no recompute)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 78,
+          "title": "Add specific-yield ROField (kWh/kWp/yr) to sanity-check PVGIS results",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 79,
+          "title": "Add performance-ratio assumption display (PR ≈1-loss%) in Solar tab",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 80,
+          "title": "Add 'east-west split' layout option (two arrays, aspect -90/+90) for flat large roofs",
+          "files": "src/lib/panelLayout.ts (new), src/components/LocationDetails.tsx",
+          "category": "solar"
+        },
+        {
+          "n": 81,
+          "title": "Compute weighted PVGIS for multi-orientation systems (sum of sub-array yields)",
+          "files": "src/lib/pvgis.ts, src/lib/panelLayout.ts (new)",
+          "category": "solar"
+        },
+        {
+          "n": 82,
+          "title": "Add roof-pitch input for sloped roofs that locks tilt to roof slope",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 83,
+          "title": "Persist estimatedValueEur (deal value) = lifetimeSavings or system price on save",
+          "files": "src/lib/solarFinance.ts, src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 84,
+          "title": "Wire estimated_value_eur (existing unused column) into saveLead read/write",
+          "files": "src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 85,
+          "title": "Add monthly self-consumption vs production overlay to SolarChart",
+          "files": "src/components/SolarChart.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 86,
+          "title": "Add 'injetada vs autoconsumida' stacked bars to SolarChart",
+          "files": "src/components/SolarChart.tsx, src/lib/solarFinance.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 87,
+          "title": "Tighten costPerKwp tiers with a smooth interpolation instead of step jumps",
+          "files": "src/lib/solarFinance.ts",
+          "category": "solar"
+        },
+        {
+          "n": 88,
+          "title": "Add system price (€/Wp) override input in financing UI",
+          "files": "src/components/LocationDetails.tsx, src/lib/solarFinance.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 89,
+          "title": "Unit tests for areaToKwp setback/compactness/GCR math",
+          "files": "src/lib/geodesy.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 90,
+          "title": "Unit tests for npv/irr/lcoe with known textbook fixtures",
+          "files": "src/lib/finance.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 91,
+          "title": "Unit tests for SCR self-consumption matching against synthetic profiles",
+          "files": "src/lib/solarFinance.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 92,
+          "title": "Unit tests for PVGIS optimalangles response parsing + regional fallback",
+          "files": "src/lib/pvgis.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 93,
+          "title": "Add JSDoc to all new solar functions with units in param names",
+          "files": "src/lib/solarFinance.ts, src/lib/finance.ts (new), src/lib/battery.ts (new)",
+          "category": "docs"
+        },
+        {
+          "n": 94,
+          "title": "Extract solar assumption constants into a single tuned config object",
+          "files": "src/lib/solarFinance.ts",
+          "category": "refactor"
+        },
+        {
+          "n": 95,
+          "title": "Add 'assumptions' expander listing every figure used in the calc for transparency",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "solar-ui"
+        },
+        {
+          "n": 96,
+          "title": "Add panel-layout export (modules, BOM, string design) into Excel as a new sheet",
+          "files": "src/lib/excel.ts, src/lib/panelLayout.ts (new)",
+          "category": "export"
+        },
+        {
+          "n": 97,
+          "title": "Add roof-area override input (manual usable m²) bypassing geometry estimate",
+          "files": "src/components/LocationDetails.tsx, src/lib/geodesy.ts",
+          "category": "solar-ui"
+        },
+        {
+          "n": 98,
+          "title": "Reuse measured area from Phase 9 measurement tool as roof-area override source",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "integration"
+        },
+        {
+          "n": 99,
+          "title": "Add specific-energy guardrail toast when PVGIS yield is outside 900-1900 kWh/kWp",
+          "files": "src/lib/pvgis.ts, src/components/LocationDetails.tsx",
+          "category": "validation"
+        },
+        {
+          "n": 100,
+          "title": "Add tooltip glossary (LCOE, NPV, IRR, SCR, GCR, PR) on hover in financing UI",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "ux"
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "theme": "CRM & Pipeline",
+      "goal": "Activate the dormant CRM infrastructure (territories, scoring, tasks, selectionIds) into a working sales pipeline: territories with map drawing and per-region stats, an activity timeline, follow-up reminders, transparent lead scoring, contacts, bulk operations, duplicate merge, and win/loss analytics.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Add migration 0004 registering version 4 in the Tauri migration vec",
+          "files": "src-tauri/migrations/0004_crm.sql (new), src-tauri/src/lib.rs",
+          "category": "data"
+        },
+        {
+          "n": 2,
+          "title": "Add `territory_id TEXT REFERENCES territories(id) ON DELETE SET NULL` to leads",
+          "files": "src-tauri/migrations/0004_crm.sql (new)",
+          "category": "data"
+        },
+        {
+          "n": 3,
+          "title": "Add index idx_leads_territory_id",
+          "files": "src-tauri/migrations/0004_crm.sql (new)",
+          "category": "data"
+        },
+        {
+          "n": 4,
+          "title": "Add Territory interface + rowToTerritory mapper in database.ts",
+          "files": "src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 5,
+          "title": "Implement saveTerritory(name, polygon, notes) writing id/bbox/polygon JSON",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 6,
+          "title": "Implement getTerritories() and deleteTerritory(id)",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 7,
+          "title": "Implement updateTerritory(id, fields) for rename/notes edits",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 8,
+          "title": "Add territories[] + setTerritories/upsertTerritory to the store",
+          "files": "src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 9,
+          "title": "Load territories on startup alongside buildings/leads/notes",
+          "files": "src/App.tsx, src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 10,
+          "title": "Add a second draw intent ('territory') reusing the polygon draw pipeline",
+          "files": "src/components/MapView.tsx, src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 11,
+          "title": "On territory finish: prompt for name, save, then assign matching buildings",
+          "files": "src/components/MapView.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 12,
+          "title": "Implement assignLeadsToTerritory(territoryId, buildingIds) in a transaction",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 13,
+          "title": "Reuse the existing turf.booleanPointInPolygon centroid loop to find members",
+          "files": "src/components/MapView.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 14,
+          "title": "Render saved territory polygons as a translucent MapLibre fill layer",
+          "files": "src/components/MapView.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 15,
+          "title": "Assign per-territory color and outline on the map fill layer",
+          "files": "src/components/MapView.tsx, src/types/building.ts",
+          "category": "crm"
+        },
+        {
+          "n": 16,
+          "title": "Add 'Territórios' nav entry to the Sidebar (handleNav routing)",
+          "files": "src/components/Sidebar.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 17,
+          "title": "Build TerritoriesPanel: list/create/edit/delete territories",
+          "files": "src/components/TerritoriesPanel.tsx (new), src/App.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 18,
+          "title": "Implement getTerritoryStats(): count/won/total_kwp GROUP BY territory",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 19,
+          "title": "Add coverage progress bar per territory (worked/total leads)",
+          "files": "src/components/TerritoriesPanel.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 20,
+          "title": "Add filter-by-territory dropdown to SearchFilter and the filter hook",
+          "files": "src/components/SearchFilter.tsx, src/hooks/useFilteredBuildings.ts, src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 21,
+          "title": "Show territory name in LocationDetails Individual tab with reassign select",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 22,
+          "title": "Click a territory row to fit map bounds to its bbox",
+          "files": "src/components/TerritoriesPanel.tsx (new), src/lib/mapInstance.ts",
+          "category": "crm"
+        },
+        {
+          "n": 23,
+          "title": "Add lead_activities table (id, lead_id, type, body, meta, created_at)",
+          "files": "src-tauri/migrations/0004_crm.sql (new)",
+          "category": "data"
+        },
+        {
+          "n": 24,
+          "title": "Add index idx_lead_activities_lead_id (lead_id, created_at DESC)",
+          "files": "src-tauri/migrations/0004_crm.sql (new)",
+          "category": "data"
+        },
+        {
+          "n": 25,
+          "title": "Define ActivityType union and LeadActivity interface",
+          "files": "src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 26,
+          "title": "Implement logActivity(leadId, type, body?, meta?)",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 27,
+          "title": "Implement getActivitiesByLead(leadId) ordered newest first",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 28,
+          "title": "Auto-log 'stage_change' in saveLead by reading prior pipeline_stage first",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 29,
+          "title": "Auto-log 'created' activity on first lead insert",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 30,
+          "title": "Auto-log 'assignment' activity on assignLeadsToTerritory",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 31,
+          "title": "Build a vertical Activity timeline in LocationDetails (copy NotesAndTasks card style)",
+          "files": "src/components/ActivityTimeline.tsx (new), src/components/LocationDetails.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 32,
+          "title": "Add 'Registar atividade' quick bar with call/email/meeting type buttons",
+          "files": "src/components/ActivityTimeline.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 33,
+          "title": "Use lucide Phone/Mail/Users/ArrowRightLeft icons per activity type",
+          "files": "src/components/ActivityTimeline.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 34,
+          "title": "Render stage_change meta as 'X → Y' with pt-PT relative date",
+          "files": "src/components/ActivityTimeline.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 35,
+          "title": "Make timeline append-only (no edit) for audit trust",
+          "files": "src/components/ActivityTimeline.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 36,
+          "title": "Add activities: Record<leadId, LeadActivity[]> to the store mirroring notes shape",
+          "files": "src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 37,
+          "title": "Add next_action_date + next_action_note columns to leads (cheap ALTER)",
+          "files": "src-tauri/migrations/0004_crm.sql (new), src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 38,
+          "title": "Add index idx_leads_next_action",
+          "files": "src-tauri/migrations/0004_crm.sql (new)",
+          "category": "data"
+        },
+        {
+          "n": 39,
+          "title": "Add next-action date picker + note input to LocationDetails",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 40,
+          "title": "Implement getDueFollowUps() WHERE next_action_date<=today AND stage NOT IN (won,lost)",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 41,
+          "title": "Build 'Próximas Ações' panel grouped Atrasados/Hoje/Esta semana",
+          "files": "src/components/FollowUpsPanel.tsx (new), src/App.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 42,
+          "title": "Add Sidebar nav entry for Follow-ups with overdue count red dot badge",
+          "files": "src/components/Sidebar.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 43,
+          "title": "Clicking a follow-up row selects the building and switches to map",
+          "files": "src/components/FollowUpsPanel.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 44,
+          "title": "Surface existing lead_tasks (0002) with no migration: full task list UI",
+          "files": "src/components/NotesAndTasks.tsx, src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 45,
+          "title": "Implement addTask/getTasksByLead/toggleTaskDone in database.ts",
+          "files": "src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 46,
+          "title": "Add task creation with due-date picker in the Notes/Tasks tab",
+          "files": "src/components/NotesAndTasks.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 47,
+          "title": "Mark task done/undo writing completed_at; log a 'note' activity",
+          "files": "src/components/NotesAndTasks.tsx, src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 48,
+          "title": "Rename Notes tab to 'Notas & Tarefas' and show task list above notes",
+          "files": "src/components/LocationDetails.tsx, src/components/NotesAndTasks.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 49,
+          "title": "Add deterministic scoreLead(lead, building) returning {score, breakdown[]}",
+          "files": "src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 50,
+          "title": "Score weight: system size via areaToKwp (bigger = more deal value)",
+          "files": "src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 51,
+          "title": "Score weight: self-consumption potential from sector load profile + payback signal",
+          "files": "src/lib/scoring.ts (new), src/lib/solarFinance.ts",
+          "category": "crm"
+        },
+        {
+          "n": 52,
+          "title": "Score weight: hasExistingPv==='yes' hard-caps score low (already covered)",
+          "files": "src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 53,
+          "title": "Score weight: sector fit (buildingUse) and data completeness (phone/email/company)",
+          "files": "src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 54,
+          "title": "Persist score + score_explanations (JSON string array) on save",
+          "files": "src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 55,
+          "title": "Wire existing unused score/score_explanations columns into rowToLead/saveLead",
+          "files": "src/db/database.ts",
+          "category": "data"
+        },
+        {
+          "n": 56,
+          "title": "Recompute score on every saveLead and on import",
+          "files": "src/db/database.ts, src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 57,
+          "title": "Display score badge (0-100) with color ramp in LocationDetails",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 58,
+          "title": "Add Score column to TableView with sort key 'score'",
+          "files": "src/components/TableView.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 59,
+          "title": "Show score breakdown explanations as a tooltip/expander",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 60,
+          "title": "Add score min/max filter to SearchFilter + filter hook",
+          "files": "src/components/SearchFilter.tsx, src/hooks/useFilteredBuildings.ts, src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 61,
+          "title": "Wire probability column: compute from stage + age + activity count",
+          "files": "src/lib/scoring.ts (new), src/db/database.ts, src/types/building.ts",
+          "category": "crm"
+        },
+        {
+          "n": 62,
+          "title": "Add probability slider in lead editor and persist it",
+          "files": "src/components/LocationDetails.tsx, src/db/database.ts",
+          "category": "crm-ui"
+        },
+        {
+          "n": 63,
+          "title": "Compute expected deal value = estimated_value_eur * probability/100",
+          "files": "src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 64,
+          "title": "Add CAE field to Lead interface + read/write to existing cae column",
+          "files": "src/types/building.ts, src/db/database.ts",
+          "category": "data"
+        },
+        {
+          "n": 65,
+          "title": "Display/edit CAE in Individual tab with CAEPOR registry link",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 66,
+          "title": "Expand Gemini prompt to also request email and CAE (atividade económica)",
+          "files": "src/lib/gemini.ts",
+          "category": "crm"
+        },
+        {
+          "n": 67,
+          "title": "Map Gemini email/cae into the saved lead via auto-fill",
+          "files": "src/lib/gemini.ts, src/lib/leadAutoFill.ts, src/components/LocationDetails.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 68,
+          "title": "Add email field input to Individual tab (currently only in CSV/Excel)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 69,
+          "title": "Add 'Send Email' button: open mailto: with greeting/body/CTA template",
+          "files": "src/components/LocationDetails.tsx, src/lib/emailTemplate.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 70,
+          "title": "Track outreach: log 'email' activity + write a sent_at on send",
+          "files": "src/lib/emailTemplate.ts (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 71,
+          "title": "Implement multi-select: Shift+click map polygons add to selectionIds with highlight",
+          "files": "src/components/MapView.tsx, src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 72,
+          "title": "Add a distinct feature-state 'multiSelected' fill style on the map",
+          "files": "src/components/MapView.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 73,
+          "title": "Implement marquee drag-to-select (Shift+drag rectangle) over polygons",
+          "files": "src/components/MapView.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 74,
+          "title": "Implement Ctrl+A to select all currently visible buildings",
+          "files": "src/components/MapView.tsx, src/hooks/useKeyboard.ts",
+          "category": "crm"
+        },
+        {
+          "n": 75,
+          "title": "Add row checkbox column + Shift-range select in TableView",
+          "files": "src/components/TableView.tsx, src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 76,
+          "title": "Build a batch-action toolbar appearing when selectionIds.length > 0",
+          "files": "src/components/BatchToolbar.tsx (new), src/App.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 77,
+          "title": "Batch: set pipeline stage for all selected leads (transaction)",
+          "files": "src/components/BatchToolbar.tsx (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 78,
+          "title": "Batch: set solar status / flag / drop reason for selected",
+          "files": "src/components/BatchToolbar.tsx (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 79,
+          "title": "Batch: assign selected to a territory",
+          "files": "src/components/BatchToolbar.tsx (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 80,
+          "title": "Batch: delete selected leads with a confirm dialog",
+          "files": "src/components/BatchToolbar.tsx (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 81,
+          "title": "Show selection count + 'Clear selection' in the batch toolbar",
+          "files": "src/components/BatchToolbar.tsx (new)",
+          "category": "crm-ui"
+        },
+        {
+          "n": 82,
+          "title": "Implement a 50-op undo stack in store for status/field/delete edits",
+          "files": "src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 83,
+          "title": "Wire Ctrl+Z / Ctrl+Y to undo/redo; show counts in UI",
+          "files": "src/hooks/useKeyboard.ts, src/store/appStore.ts, src/App.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 84,
+          "title": "Discard undo stack on page refresh (in-memory only)",
+          "files": "src/store/appStore.ts",
+          "category": "crm"
+        },
+        {
+          "n": 85,
+          "title": "Implement duplicate detection: fuzzy company name + building proximity before save",
+          "files": "src/lib/dedupe.ts (new), src/components/LocationDetails.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 86,
+          "title": "Show 'Atualizar existente ou Criar novo?' prompt on likely duplicate",
+          "files": "src/components/LocationDetails.tsx, src/lib/dedupe.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 87,
+          "title": "Implement mergeLeads(keepId, mergeId) combining notes/activities/tasks",
+          "files": "src/db/database.ts, src/lib/dedupe.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 88,
+          "title": "Add a Duplicates review panel listing fuzzy-matched lead pairs with Merge",
+          "files": "src/components/DuplicatesPanel.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 89,
+          "title": "Show duplicate-count badge in TableView for same-company leads",
+          "files": "src/components/TableView.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 90,
+          "title": "Add a Contacts model: support multiple contacts per lead",
+          "files": "src-tauri/migrations/0004_crm.sql (new), src/db/database.ts, src/types/building.ts",
+          "category": "data"
+        },
+        {
+          "n": 91,
+          "title": "Build Contacts sub-panel (name/role/phone/email) in Individual tab",
+          "files": "src/components/ContactsPanel.tsx (new), src/components/LocationDetails.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 92,
+          "title": "Add a Pipeline/Analytics view with counts and Σ kWp per stage (Kanban-style)",
+          "files": "src/components/PipelineBoard.tsx (new), src/components/Sidebar.tsx",
+          "category": "crm"
+        },
+        {
+          "n": 93,
+          "title": "Compute weighted pipeline value Σ(expectedValue) by stage",
+          "files": "src/components/PipelineBoard.tsx (new), src/lib/scoring.ts (new)",
+          "category": "crm"
+        },
+        {
+          "n": 94,
+          "title": "Win/loss analytics: win rate, avg time-to-close from activity timestamps",
+          "files": "src/components/WinLossPanel.tsx (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 95,
+          "title": "Loss-reason breakdown chart using existing drop_reason values",
+          "files": "src/components/WinLossPanel.tsx (new)",
+          "category": "crm"
+        },
+        {
+          "n": 96,
+          "title": "Won-by-sector and won-by-territory breakdowns",
+          "files": "src/components/WinLossPanel.tsx (new), src/db/database.ts",
+          "category": "crm"
+        },
+        {
+          "n": 97,
+          "title": "Add lead age (days since createdAt) column + stale-lead highlight",
+          "files": "src/components/TableView.tsx",
+          "category": "crm-ui"
+        },
+        {
+          "n": 98,
+          "title": "Add owner/assignee field with per-owner pipeline filter",
+          "files": "src/components/LocationDetails.tsx, src/components/SearchFilter.tsx, src/hooks/useFilteredBuildings.ts",
+          "category": "crm"
+        },
+        {
+          "n": 99,
+          "title": "Unit tests for scoreLead determinism and hasExistingPv cap",
+          "files": "src/lib/scoring.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 100,
+          "title": "Unit tests for territory point-in-polygon assignment and dedupe fuzzy match",
+          "files": "src/lib/dedupe.test.ts (new)",
+          "category": "test"
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "theme": "Reports, Export & Data",
+      "goal": "Make the app a durable system of record and a proposal-generating tool: full SQLite backup/restore with version checks, Excel/CSV round-trip import, complete export column coverage, a professional single-lead PDF report with a map snapshot, a printable proposal, and a portfolio summary report.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Add 'Export Database' button downloading the full pye_prospector.db",
+          "files": "src/components/SettingsModal.tsx, src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 2,
+          "title": "Add a Tauri command to read the SQLite file bytes for backup",
+          "files": "src-tauri/src/lib.rs",
+          "category": "data"
+        },
+        {
+          "n": 3,
+          "title": "Use tauri-plugin-dialog save dialog to choose backup path",
+          "files": "src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 4,
+          "title": "Name backups pye_prospector_backup_YYYY-MM-DD.db",
+          "files": "src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 5,
+          "title": "Add 'Import Database' button to restore from a .db backup",
+          "files": "src/components/SettingsModal.tsx, src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 6,
+          "title": "Add a Tauri command to overwrite the live DB file after closing the pool",
+          "files": "src-tauri/src/lib.rs",
+          "category": "data"
+        },
+        {
+          "n": 7,
+          "title": "Version check: read user_version/schema and block importing newer/older schema",
+          "files": "src/db/backup.ts (new), src-tauri/migrations/0005_*.sql (new)",
+          "category": "data"
+        },
+        {
+          "n": 8,
+          "title": "Confirm-dialog before restore ('isto substitui todos os dados atuais')",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "data"
+        },
+        {
+          "n": 9,
+          "title": "Auto-backup last 5 copies on each restore/import for safety",
+          "files": "src/db/backup.ts (new), src-tauri/src/lib.rs",
+          "category": "data"
+        },
+        {
+          "n": 10,
+          "title": "Run 'PRAGMA integrity_check' on startup and warn on failure",
+          "files": "src/db/database.ts, src/App.tsx",
+          "category": "data"
+        },
+        {
+          "n": 11,
+          "title": "Offer 'Restore from Backup' action when integrity check fails",
+          "files": "src/App.tsx, src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 12,
+          "title": "Add JSON export (all leads+buildings+notes+activities) as a portable alternative to .db",
+          "files": "src/db/backup.ts (new), src/components/SettingsModal.tsx",
+          "category": "export"
+        },
+        {
+          "n": 13,
+          "title": "Add JSON import that upserts from the exported JSON envelope",
+          "files": "src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 14,
+          "title": "Include all lead fields in exportLeadsCSV (currently omits flagged/drop_reason/email/building_use/has_existing_pv/nif/estimated_value_eur)",
+          "files": "src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 15,
+          "title": "Add score, probability, cae, territory to CSV export columns",
+          "files": "src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 16,
+          "title": "Add a header comment row with schema version to CSV for round-trip safety",
+          "files": "src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 17,
+          "title": "Implement importLeadsCSV(text): parse, validate, upsert (by id then building proximity)",
+          "files": "src/lib/csvImport.ts (new), src/db/database.ts",
+          "category": "data"
+        },
+        {
+          "n": 18,
+          "title": "Reuse existing formula-injection-safe cell quoting on round-trip parse",
+          "files": "src/lib/csvImport.ts (new)",
+          "category": "security"
+        },
+        {
+          "n": 19,
+          "title": "Add 'Import Leads (CSV)' button + file picker to TableView toolbar",
+          "files": "src/components/TableView.tsx, src/lib/csvImport.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 20,
+          "title": "Implement 'Import Leads from Excel' dialog (company,address,lat,lon,solar_status,pipeline_stage)",
+          "files": "src/lib/excelImport.ts (new), src/components/ImportDialog.tsx (new)",
+          "category": "data"
+        },
+        {
+          "n": 21,
+          "title": "Validate XLSX headers and show per-row error report before commit",
+          "files": "src/lib/excelImport.ts (new), src/components/ImportDialog.tsx (new)",
+          "category": "validation"
+        },
+        {
+          "n": 22,
+          "title": "Upsert imported leads by building centroid proximity (within 10m = same)",
+          "files": "src/lib/excelImport.ts (new), src/lib/dedupe.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 23,
+          "title": "Make the Excel export round-trippable: stable ID column + parseable enum labels",
+          "files": "src/lib/excel.ts, src/lib/excelImport.ts (new)",
+          "category": "export"
+        },
+        {
+          "n": 24,
+          "title": "Add a 'Solar' sheet to Excel export (kWp, kWh/yr, investment, payback, NPV, CO₂)",
+          "files": "src/lib/excel.ts, src/lib/solarFinance.ts",
+          "category": "export"
+        },
+        {
+          "n": 25,
+          "title": "Add an 'Atividades' sheet to Excel export from lead_activities",
+          "files": "src/lib/excel.ts, src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 26,
+          "title": "Add a 'Territórios' sheet with per-territory stats to Excel export",
+          "files": "src/lib/excel.ts, src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 27,
+          "title": "Add column-width auto-fit to Excel sheets for readability",
+          "files": "src/lib/excel.ts",
+          "category": "export"
+        },
+        {
+          "n": 28,
+          "title": "Add export-scope toggle: all vs filtered (visible) buildings only",
+          "files": "src/components/TableView.tsx, src/lib/excel.ts, src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 29,
+          "title": "Add GeoJSON export of leads as point features (lat/lon + properties)",
+          "files": "src/lib/geojsonExport.ts (new), src/components/TableView.tsx",
+          "category": "export"
+        },
+        {
+          "n": 30,
+          "title": "Add KML export for opening leads in Google Earth",
+          "files": "src/lib/kmlExport.ts (new), src/components/TableView.tsx",
+          "category": "export"
+        },
+        {
+          "n": 31,
+          "title": "Add building-footprints GeoJSON export (polygons) for GIS tools",
+          "files": "src/lib/geojsonExport.ts (new)",
+          "category": "export"
+        },
+        {
+          "n": 32,
+          "title": "Add bundled pdf library (jspdf) lazy-loaded like xlsx",
+          "files": "package.json, src/lib/pdfReport.ts (new)",
+          "category": "infra"
+        },
+        {
+          "n": 33,
+          "title": "Implement generateLeadPdf(lead, building, finance) — single-lead profile",
+          "files": "src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 34,
+          "title": "PDF header: company name, address, NIF, sector, contact block",
+          "files": "src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 35,
+          "title": "PDF solar section: kWp, annual kWh, investment, payback, NPV, LCOE, CO₂",
+          "files": "src/lib/pdfReport.ts (new), src/lib/solarFinance.ts",
+          "category": "report"
+        },
+        {
+          "n": 36,
+          "title": "Capture a map snapshot of the building via map.getCanvas().toDataURL()",
+          "files": "src/lib/mapSnapshot.ts (new), src/lib/mapInstance.ts",
+          "category": "report"
+        },
+        {
+          "n": 37,
+          "title": "Center+fit the map to the building before snapshot, then restore view",
+          "files": "src/lib/mapSnapshot.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 38,
+          "title": "Embed the map snapshot image into the lead PDF",
+          "files": "src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 39,
+          "title": "Use preserveDrawingBuffer:true on the map so toDataURL isn't blank",
+          "files": "src/components/MapView.tsx",
+          "category": "bugfix"
+        },
+        {
+          "n": 40,
+          "title": "Add a small monthly-generation chart image into the PDF",
+          "files": "src/lib/pdfReport.ts (new), src/components/SolarChart.tsx",
+          "category": "report"
+        },
+        {
+          "n": 41,
+          "title": "Add 'Gerar Relatório PDF' button in LocationDetails",
+          "files": "src/components/LocationDetails.tsx, src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 42,
+          "title": "Add report template selector (Lead Profile / Proposal / Portfolio Summary)",
+          "files": "src/components/ReportDialog.tsx (new)",
+          "category": "report"
+        },
+        {
+          "n": 43,
+          "title": "Implement printable proposal: cover, scope, financials, assumptions, validity",
+          "files": "src/lib/proposal.ts (new), src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 44,
+          "title": "Add company branding (logo, name, contacts) config used in PDFs",
+          "files": "src/components/SettingsModal.tsx, src/config.ts, src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 45,
+          "title": "Persist branding (logo data-URL, name, phone, email) in localStorage",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "report"
+        },
+        {
+          "n": 46,
+          "title": "Proposal financing table reflects selected model (CAPEX/PPA/Lease)",
+          "files": "src/lib/proposal.ts (new), src/lib/solarFinance.ts",
+          "category": "report"
+        },
+        {
+          "n": 47,
+          "title": "Add proposal disclaimer/footer ('estimativa, não vinculativa')",
+          "files": "src/lib/proposal.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 48,
+          "title": "Implement Portfolio Summary report: region stats, top prospects, total kWp/investment",
+          "files": "src/lib/portfolioReport.ts (new), src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 49,
+          "title": "Portfolio report respects active filters / selected territory",
+          "files": "src/lib/portfolioReport.ts (new), src/hooks/useFilteredBuildings.ts",
+          "category": "report"
+        },
+        {
+          "n": 50,
+          "title": "Portfolio report: pipeline funnel and Σ expected value",
+          "files": "src/lib/portfolioReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 51,
+          "title": "Portfolio report: loss-reason and sector pie summaries",
+          "files": "src/lib/portfolioReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 52,
+          "title": "Add a static map snapshot (filtered extent) to the portfolio report",
+          "files": "src/lib/mapSnapshot.ts (new), src/lib/portfolioReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 53,
+          "title": "Add 'Imprimir' (browser print) CSS for an on-screen proposal preview",
+          "files": "src/components/ProposalPreview.tsx (new), src/index.css",
+          "category": "report"
+        },
+        {
+          "n": 54,
+          "title": "Add page numbers + generation date to all PDFs",
+          "files": "src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 55,
+          "title": "Add a 'Debug Logs' export button (error log buffer) in Settings",
+          "files": "src/components/SettingsModal.tsx, src/lib/errorLog.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 56,
+          "title": "Capture uncaught errors to a localStorage ring buffer (max 100)",
+          "files": "src/lib/errorLog.ts (new), src/main.tsx",
+          "category": "reliability"
+        },
+        {
+          "n": 57,
+          "title": "Validate imported lat/lon ranges and enum values, skipping bad rows with report",
+          "files": "src/lib/csvImport.ts (new), src/lib/excelImport.ts (new)",
+          "category": "validation"
+        },
+        {
+          "n": 58,
+          "title": "Show import summary toast (X importados, Y atualizados, Z ignorados)",
+          "files": "src/components/ImportDialog.tsx (new)",
+          "category": "ux"
+        },
+        {
+          "n": 59,
+          "title": "Add a dry-run preview table before committing an import",
+          "files": "src/components/ImportDialog.tsx (new)",
+          "category": "ux"
+        },
+        {
+          "n": 60,
+          "title": "Reload store from DB after any import (setBuildings/setLeads/setNotes)",
+          "files": "src/components/ImportDialog.tsx (new), src/App.tsx",
+          "category": "data"
+        },
+        {
+          "n": 61,
+          "title": "Add UTF-8 BOM to CSV export so Excel opens accents correctly",
+          "files": "src/components/TableView.tsx, src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 62,
+          "title": "Add semicolon-delimiter option for PT Excel locale CSVs",
+          "files": "src/db/database.ts, src/components/SettingsModal.tsx",
+          "category": "export"
+        },
+        {
+          "n": 63,
+          "title": "Persist export preferences (delimiter, scope, columns) in Settings",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "export"
+        },
+        {
+          "n": 64,
+          "title": "Add per-territory CSV/Excel export from TerritoriesPanel",
+          "files": "src/components/TerritoriesPanel.tsx (new), src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 65,
+          "title": "Use save-dialog (not anchor click) for downloads in Tauri builds",
+          "files": "src/db/backup.ts (new), src/components/TableView.tsx",
+          "category": "data"
+        },
+        {
+          "n": 66,
+          "title": "Add a scheduled/auto-backup-on-close hook (last write timestamp)",
+          "files": "src-tauri/src/lib.rs, src/db/backup.ts (new)",
+          "category": "data"
+        },
+        {
+          "n": 67,
+          "title": "Show last-backup date in Settings with 'Backup overdue' nudge",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 68,
+          "title": "Add notes export sheet guard when notes map is empty (currently fine; add activities guard too)",
+          "files": "src/lib/excel.ts",
+          "category": "export"
+        },
+        {
+          "n": 69,
+          "title": "Add building_use and has_existing_pv human labels to Excel export",
+          "files": "src/lib/excel.ts, src/types/building.ts",
+          "category": "export"
+        },
+        {
+          "n": 70,
+          "title": "Add solar source ('PVGIS'/'estimate') column to exports",
+          "files": "src/lib/excel.ts, src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 71,
+          "title": "Add report logo/colors theme to match the orange brand",
+          "files": "src/lib/pdfReport.ts (new)",
+          "category": "report"
+        },
+        {
+          "n": 72,
+          "title": "Generate batch PDFs for selectionIds (zip of lead profiles)",
+          "files": "src/lib/pdfReport.ts (new), src/components/BatchToolbar.tsx (new)",
+          "category": "report"
+        },
+        {
+          "n": 73,
+          "title": "Add an HTML email-body export (.eml) for the chosen lead",
+          "files": "src/lib/emailTemplate.ts (new)",
+          "category": "export"
+        },
+        {
+          "n": 74,
+          "title": "Add 'Copiar resumo' button copying a plain-text lead summary to clipboard",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 75,
+          "title": "Validate that estimated_kwp/kwh present before allowing solar PDF section",
+          "files": "src/lib/pdfReport.ts (new)",
+          "category": "validation"
+        },
+        {
+          "n": 76,
+          "title": "Add restore-preview: list counts (leads/buildings/territories) from backup before applying",
+          "files": "src/db/backup.ts (new), src/components/SettingsModal.tsx",
+          "category": "data"
+        },
+        {
+          "n": 77,
+          "title": "Store schema_version in a meta table to drive backup compatibility checks",
+          "files": "src-tauri/migrations/0005_*.sql (new), src/db/database.ts",
+          "category": "data"
+        },
+        {
+          "n": 78,
+          "title": "Add migration 0005 and register it in lib.rs (meta + report fields)",
+          "files": "src-tauri/migrations/0005_*.sql (new), src-tauri/src/lib.rs",
+          "category": "data"
+        },
+        {
+          "n": 79,
+          "title": "Add 'Exportar PDF' to the report dialog respecting branding+template",
+          "files": "src/components/ReportDialog.tsx (new)",
+          "category": "report"
+        },
+        {
+          "n": 80,
+          "title": "Add CSV/Excel export error handling with actionable toast (DB indisponível)",
+          "files": "src/components/TableView.tsx, src/components/Sidebar.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 81,
+          "title": "Add a sample/template Excel download to guide import format",
+          "files": "src/components/ImportDialog.tsx (new), src/lib/excel.ts",
+          "category": "ux"
+        },
+        {
+          "n": 82,
+          "title": "Stream large CSV exports to avoid building one giant string in memory",
+          "files": "src/db/database.ts",
+          "category": "perf"
+        },
+        {
+          "n": 83,
+          "title": "Paginate DB reads for export at 10k+ leads",
+          "files": "src/db/database.ts",
+          "category": "perf"
+        },
+        {
+          "n": 84,
+          "title": "Add export of measurement records (Phase 9) to CSV with building id",
+          "files": "src/lib/measurements.ts (new), src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 85,
+          "title": "Add a printable territory coverage report (worked vs total) PDF",
+          "files": "src/lib/portfolioReport.ts (new), src/components/TerritoriesPanel.tsx (new)",
+          "category": "report"
+        },
+        {
+          "n": 86,
+          "title": "Add 'Open output folder' button after a successful export/backup",
+          "files": "src-tauri/src/lib.rs, src/db/backup.ts (new)",
+          "category": "ux"
+        },
+        {
+          "n": 87,
+          "title": "Sanitize lead notes/HTML when embedding into PDF/proposal",
+          "files": "src/lib/pdfReport.ts (new), src/lib/validation.ts",
+          "category": "security"
+        },
+        {
+          "n": 88,
+          "title": "Add a JSON-schema (zod) for the import envelope and validate on load",
+          "files": "src/lib/csvImport.ts (new), src/lib/excelImport.ts (new)",
+          "category": "validation"
+        },
+        {
+          "n": 89,
+          "title": "Cap import row count with a warning and chunked transaction commits",
+          "files": "src/lib/excelImport.ts (new), src/db/database.ts",
+          "category": "perf"
+        },
+        {
+          "n": 90,
+          "title": "Add unit tests for CSV round-trip (export then import equals original)",
+          "files": "src/lib/csvImport.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 91,
+          "title": "Add unit tests for Excel header validation and proximity upsert",
+          "files": "src/lib/excelImport.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 92,
+          "title": "Add unit tests for backup version-check gating",
+          "files": "src/db/backup.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 93,
+          "title": "Add snapshot test for the lead PDF content layout (text extraction)",
+          "files": "src/lib/pdfReport.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 94,
+          "title": "Document backup/restore and import formats in README",
+          "files": "README.md, docs/",
+          "category": "docs"
+        },
+        {
+          "n": 95,
+          "title": "Add an in-app help link in Settings to the import format doc",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "docs"
+        },
+        {
+          "n": 96,
+          "title": "Add a 'verify export' self-check that re-reads the written file size > 0",
+          "files": "src/db/backup.ts (new)",
+          "category": "reliability"
+        },
+        {
+          "n": 97,
+          "title": "Add timestamp + app version watermark to all exported files",
+          "files": "src/lib/excel.ts, src/db/database.ts, src/lib/pdfReport.ts (new)",
+          "category": "export"
+        },
+        {
+          "n": 98,
+          "title": "Add error boundary around report generation to avoid app crash on PDF failure",
+          "files": "src/components/ReportDialog.tsx (new)",
+          "category": "reliability"
+        },
+        {
+          "n": 99,
+          "title": "Add progress indicator for batch PDF / large export jobs",
+          "files": "src/components/ReportDialog.tsx (new), src/components/BatchToolbar.tsx (new)",
+          "category": "ux"
+        },
+        {
+          "n": 100,
+          "title": "Add 'Reset to defaults' for export/branding settings",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "ux"
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "theme": "Map Tools & Coverage",
+      "goal": "Turn the map into a professional field tool: distance/area measurement, a real layers panel (satellite/ortho/DGT/streets/footprints/territories), marquee multi-select, a legend, manual building drawing with vertex editing, footprint-coverage supplements (MS/Overture), clustering at low zoom, and minimap/scale controls.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Add a measurement mode toggle (distance/area) to the bottom toolbar",
+          "files": "src/components/MapView.tsx, src/store/appStore.ts",
+          "category": "map"
+        },
+        {
+          "n": 2,
+          "title": "Implement click-to-add-points distance measurement with running total",
+          "files": "src/components/MapView.tsx, src/lib/measure.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 3,
+          "title": "Compute distance via turf.length in meters/km with locale formatting",
+          "files": "src/lib/measure.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 4,
+          "title": "Implement close-polygon area measurement via turf.area (use geodesy fallback)",
+          "files": "src/components/MapView.tsx, src/lib/measure.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 5,
+          "title": "Render measurement overlay (lines, vertices, labels) on a dedicated source",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 6,
+          "title": "Show live measurement readout chip (top-center) while measuring",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 7,
+          "title": "ESC clears the active measurement (extend existing ESC handler)",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 8,
+          "title": "Persist measurements to a lead (associate with nearest building id)",
+          "files": "src/lib/measurements.ts (new), src/db/database.ts",
+          "category": "data"
+        },
+        {
+          "n": 9,
+          "title": "Export measurements to CSV with building id (per audit)",
+          "files": "src/lib/measurements.ts (new), src/db/database.ts",
+          "category": "export"
+        },
+        {
+          "n": 10,
+          "title": "Add 'use measured area as roof area' button linking to Phase 6 override",
+          "files": "src/components/MapView.tsx, src/components/LocationDetails.tsx",
+          "category": "integration"
+        },
+        {
+          "n": 11,
+          "title": "Build the LayersPanel UI gated by existing showLayersPanel state",
+          "files": "src/components/LayersPanel.tsx (new), src/App.tsx",
+          "category": "map"
+        },
+        {
+          "n": 12,
+          "title": "Layer toggle: MapTiler satellite/hybrid",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 13,
+          "title": "Layer toggle: OSM streets base",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 14,
+          "title": "Layer toggle: DGT ortofotos 25cm via WMS (config.dgtWmsUrl already present)",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx, src/config.ts",
+          "category": "map"
+        },
+        {
+          "n": 15,
+          "title": "Add DGT WMS raster source with correct layer/format params",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 16,
+          "title": "Show ortho capture year label when DGT layer is active",
+          "files": "src/components/LayersPanel.tsx (new)",
+          "category": "map-ui"
+        },
+        {
+          "n": 17,
+          "title": "Layer toggle: building footprints visibility (fill/outline opacity)",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 18,
+          "title": "Layer toggle: territory boundaries visibility",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 19,
+          "title": "Layer opacity sliders for footprints and ortho",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 20,
+          "title": "Persist layer preferences in localStorage (pye:layers)",
+          "files": "src/components/LayersPanel.tsx (new)",
+          "category": "data"
+        },
+        {
+          "n": 21,
+          "title": "Restore layer preferences on map init",
+          "files": "src/components/MapView.tsx, src/components/LayersPanel.tsx (new)",
+          "category": "data"
+        },
+        {
+          "n": 22,
+          "title": "Fix style-switch wiping footprints: re-add ortho/territory layers in styledata handler",
+          "files": "src/components/MapView.tsx",
+          "category": "bugfix"
+        },
+        {
+          "n": 23,
+          "title": "Build a color legend for solar-status and pipeline-stage fill colors",
+          "files": "src/components/MapLegend.tsx (new), src/types/building.ts",
+          "category": "map-ui"
+        },
+        {
+          "n": 24,
+          "title": "Collapsible legend pinned bottom-left, hidden in table view",
+          "files": "src/components/MapLegend.tsx (new), src/App.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 25,
+          "title": "Legend includes flagged/selected/territory swatches",
+          "files": "src/components/MapLegend.tsx (new)",
+          "category": "map-ui"
+        },
+        {
+          "n": 26,
+          "title": "Add a maplibre ScaleControl to the map",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 27,
+          "title": "Add a minimap/overview inset (small synced map)",
+          "files": "src/components/Minimap.tsx (new), src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 28,
+          "title": "Implement marquee drag-select rectangle on the map (Shift+drag)",
+          "files": "src/components/MapView.tsx, src/store/appStore.ts",
+          "category": "map"
+        },
+        {
+          "n": 29,
+          "title": "Highlight marquee-selected polygons via feature-state and populate selectionIds",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 30,
+          "title": "Shift+click toggles a single polygon in/out of selection",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 31,
+          "title": "Add selection-count chip and 'Clear' on the map",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 32,
+          "title": "Wire selectionCursor (existing) for arrow-key navigation through selection",
+          "files": "src/components/MapView.tsx, src/store/appStore.ts",
+          "category": "map"
+        },
+        {
+          "n": 33,
+          "title": "Implement manual building draw mode saving a 'manual' source BuildingFeature",
+          "files": "src/components/MapView.tsx, src/db/database.ts, src/types/building.ts",
+          "category": "map"
+        },
+        {
+          "n": 34,
+          "title": "Compute area/centroid for manual buildings via geodesy helpers",
+          "files": "src/components/MapView.tsx, src/lib/geodesy.ts",
+          "category": "map"
+        },
+        {
+          "n": 35,
+          "title": "Allow 'manual' source already in CHECK? Update migration to permit 'manual'/'overture' source",
+          "files": "src-tauri/migrations/0005_*.sql (new), src-tauri/src/lib.rs",
+          "category": "data"
+        },
+        {
+          "n": 36,
+          "title": "After draw, open LocationDetails to fill the new manual building's lead",
+          "files": "src/components/MapView.tsx, src/components/LocationDetails.tsx",
+          "category": "map"
+        },
+        {
+          "n": 37,
+          "title": "Vertex editing: click+drag a vertex to move it",
+          "files": "src/components/MapView.tsx, src/lib/polyEdit.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 38,
+          "title": "Right-click a vertex to remove it (min 3 enforced)",
+          "files": "src/components/MapView.tsx, src/lib/polyEdit.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 39,
+          "title": "Double-click an edge to insert a vertex",
+          "files": "src/components/MapView.tsx, src/lib/polyEdit.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 40,
+          "title": "Enter to finalize an edited polygon; ESC to cancel edits",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 41,
+          "title": "Edit an existing building's geometry (load coords into edit mode)",
+          "files": "src/components/MapView.tsx, src/db/database.ts",
+          "category": "map"
+        },
+        {
+          "n": 42,
+          "title": "Persist drawn polygon coords + drawMode so session restores after reload",
+          "files": "src/components/MapView.tsx, src/store/appStore.ts",
+          "category": "data"
+        },
+        {
+          "n": 43,
+          "title": "Persist selectedBuildingId in localStorage and restore selection on load",
+          "files": "src/components/MapView.tsx, src/App.tsx",
+          "category": "data"
+        },
+        {
+          "n": 44,
+          "title": "Add 'Clear session' button in Settings (clears mapview/selection/draw)",
+          "files": "src/components/SettingsModal.tsx",
+          "category": "data"
+        },
+        {
+          "n": 45,
+          "title": "Implement clustering: cluster:true on a points source for zoom < 13",
+          "files": "src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 46,
+          "title": "Add cluster circle + count label layers",
+          "files": "src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 47,
+          "title": "Click a cluster to zoom to its expansion bounds",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 48,
+          "title": "Switch to polygon fills above zoom 13, points/clusters below",
+          "files": "src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 49,
+          "title": "Keep selected/flagged buildings always rendered (excluded from clustering)",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 50,
+          "title": "Add MS Building Footprints fetch source",
+          "files": "src/lib/msFootprints.ts (new)",
+          "category": "coverage"
+        },
+        {
+          "n": 51,
+          "title": "Add Overture buildings fetch source",
+          "files": "src/lib/overture.ts (new)",
+          "category": "coverage"
+        },
+        {
+          "n": 52,
+          "title": "Add a source toggle (OSM / MS / Overture) in the LayersPanel",
+          "files": "src/components/LayersPanel.tsx (new), src/components/Sidebar.tsx",
+          "category": "coverage"
+        },
+        {
+          "n": 53,
+          "title": "Deduplicate multi-source buildings by centroid proximity (within 10m)",
+          "files": "src/lib/overpass.ts, src/lib/dedupe.ts (new)",
+          "category": "coverage"
+        },
+        {
+          "n": 54,
+          "title": "Tag building source in UI (OSM/MS/Overture badge) in LocationDetails",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "coverage"
+        },
+        {
+          "n": 55,
+          "title": "Supplement coverage: only add footprint buildings where OSM has none in bbox",
+          "files": "src/lib/overpass.ts, src/lib/msFootprints.ts (new)",
+          "category": "coverage"
+        },
+        {
+          "n": 56,
+          "title": "Show coverage stats after fetch (OSM N, supplemented M)",
+          "files": "src/components/Sidebar.tsx",
+          "category": "coverage"
+        },
+        {
+          "n": 57,
+          "title": "Validate fetched geometry (closed, non-self-intersecting); skip invalid",
+          "files": "src/lib/overpass.ts, src/lib/geometry.ts (new)",
+          "category": "validation"
+        },
+        {
+          "n": 58,
+          "title": "Show geometry status (válida/inválida) in metadata tab",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 59,
+          "title": "Auto-retry Overpass with tileBBox quadtree split on timeout (max 3)",
+          "files": "src/lib/overpass.ts",
+          "category": "reliability"
+        },
+        {
+          "n": 60,
+          "title": "Show 'A repetir com tiles menores…' message during retry",
+          "files": "src/lib/overpass.ts, src/components/Sidebar.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 61,
+          "title": "Add manual zoom-to-territory / zoom-to-selection buttons",
+          "files": "src/components/MapView.tsx, src/lib/mapInstance.ts",
+          "category": "map"
+        },
+        {
+          "n": 62,
+          "title": "Add a 'fit to all buildings' button",
+          "files": "src/components/MapView.tsx, src/lib/mapInstance.ts",
+          "category": "map"
+        },
+        {
+          "n": 63,
+          "title": "Add geolocate control (jump to current GPS position)",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 64,
+          "title": "Add a coordinate readout (lat/lon under cursor) chip",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 65,
+          "title": "Add right-click context menu (drop pin / measure here / add manual building)",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 66,
+          "title": "Add 'copiar coordenadas' from the context menu",
+          "files": "src/components/MapView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 67,
+          "title": "Color buildings by score (heatmap-style ramp) toggle",
+          "files": "src/components/MapView.tsx, src/lib/scoring.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 68,
+          "title": "Color buildings by territory toggle",
+          "files": "src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 69,
+          "title": "Add a color-by selector in the LayersPanel (status/pipeline/score/territory)",
+          "files": "src/components/LayersPanel.tsx (new)",
+          "category": "map-ui"
+        },
+        {
+          "n": 70,
+          "title": "Render territory labels (name) at polygon centroid",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 71,
+          "title": "Add hover popup with name/company/kWp on building hover",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 72,
+          "title": "Throttle hover popup queries to avoid render churn",
+          "files": "src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 73,
+          "title": "Add a 'Drop Pin' tool that opens DropLocationDialog at clicked point",
+          "files": "src/components/MapView.tsx, src/components/DropLocationDialog.tsx",
+          "category": "map"
+        },
+        {
+          "n": 74,
+          "title": "Add measurement units toggle (m/km, m²/ha) in Settings",
+          "files": "src/components/SettingsModal.tsx, src/lib/measure.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 75,
+          "title": "Snap measurement points to building vertices when near",
+          "files": "src/lib/measure.ts (new), src/components/MapView.tsx",
+          "category": "map"
+        },
+        {
+          "n": 76,
+          "title": "Add a layers/measure keyboard shortcut (e.g. 'l' / 'd')",
+          "files": "src/hooks/useKeyboard.ts, src/App.tsx",
+          "category": "map"
+        },
+        {
+          "n": 77,
+          "title": "Persist 'satellite' default consistently between BottomToolbar and LayersPanel state",
+          "files": "src/components/MapView.tsx, src/components/LayersPanel.tsx (new)",
+          "category": "bugfix"
+        },
+        {
+          "n": 78,
+          "title": "Debounce MapTiler style fetch and cache the parsed style",
+          "files": "src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 79,
+          "title": "Guard map ops when style not yet loaded (isStyleLoaded checks)",
+          "files": "src/components/MapView.tsx",
+          "category": "reliability"
+        },
+        {
+          "n": 80,
+          "title": "Add attribution for DGT, MS Footprints, Overture sources",
+          "files": "src/components/MapView.tsx",
+          "category": "compliance"
+        },
+        {
+          "n": 81,
+          "title": "Add a 'reset north / pitch' button",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 82,
+          "title": "Add building outline width scaling with zoom for legibility",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 83,
+          "title": "Add a 'fade non-matching' mode so filtered-out buildings dim instead of hide",
+          "files": "src/components/MapView.tsx, src/hooks/useFilteredBuildings.ts",
+          "category": "map"
+        },
+        {
+          "n": 84,
+          "title": "Add map loading skeleton/spinner until first style+data ready",
+          "files": "src/components/MapView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 85,
+          "title": "Add 'no buildings in view' empty hint distinct from 'none loaded'",
+          "files": "src/components/MapView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 86,
+          "title": "Add a 'reload buildings from DB' refresh button",
+          "files": "src/components/MapView.tsx, src/db/database.ts",
+          "category": "map"
+        },
+        {
+          "n": 87,
+          "title": "Add print/snapshot map button (PNG of current view)",
+          "files": "src/components/MapView.tsx, src/lib/mapSnapshot.ts (new)",
+          "category": "map"
+        },
+        {
+          "n": 88,
+          "title": "Persist preserveDrawingBuffer flag enablement for snapshot reliability",
+          "files": "src/components/MapView.tsx",
+          "category": "bugfix"
+        },
+        {
+          "n": 89,
+          "title": "Add measurement label collision avoidance (offset overlapping labels)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ui"
+        },
+        {
+          "n": 90,
+          "title": "Add max-bbox guard message reuse for draw-territory area too",
+          "files": "src/components/MapView.tsx",
+          "category": "validation"
+        },
+        {
+          "n": 91,
+          "title": "Add aria-labels/titles to all new map toolbar buttons",
+          "files": "src/components/MapView.tsx, src/components/LayersPanel.tsx (new)",
+          "category": "a11y"
+        },
+        {
+          "n": 92,
+          "title": "Keyboard-operable LayersPanel (tab order, Enter toggles)",
+          "files": "src/components/LayersPanel.tsx (new)",
+          "category": "a11y"
+        },
+        {
+          "n": 93,
+          "title": "Unit tests for measure distance/area helpers",
+          "files": "src/lib/measure.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 94,
+          "title": "Unit tests for geometry validation (self-intersection, unclosed)",
+          "files": "src/lib/geometry.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 95,
+          "title": "Unit tests for multi-source dedupe by proximity",
+          "files": "src/lib/dedupe.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 96,
+          "title": "Unit tests for polygon vertex edit operations (move/add/remove)",
+          "files": "src/lib/polyEdit.test.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 97,
+          "title": "Add manual building dedupe against existing OSM building on save",
+          "files": "src/components/MapView.tsx, src/lib/dedupe.ts (new)",
+          "category": "coverage"
+        },
+        {
+          "n": 98,
+          "title": "Add a quick 'measure roof' shortcut from LocationDetails Solar tab",
+          "files": "src/components/LocationDetails.tsx, src/components/MapView.tsx",
+          "category": "integration"
+        },
+        {
+          "n": 99,
+          "title": "Add layer-load error toasts (DGT/MapTiler unreachable)",
+          "files": "src/components/MapView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 100,
+          "title": "Document map tools/layers in README with screenshots",
+          "files": "README.md, docs/",
+          "category": "docs"
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "theme": "Professional Polish",
+      "goal": "Make the app feel finished and dependable for daily field use: first-run onboarding, a command palette, complete Portuguese i18n with toggle, AAA accessibility, smooth animations, density/theme options, consistent empty/loading/error states everywhere, full keyboard control, and verified performance at 10k buildings.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Add a first-run welcome modal (Get Rooftops → Select → Mark → Export)",
+          "files": "src/components/Onboarding.tsx (new), src/App.tsx",
+          "category": "onboarding"
+        },
+        {
+          "n": 2,
+          "title": "Persist onboarding-seen flag in localStorage (pye:onboarded)",
+          "files": "src/components/Onboarding.tsx (new)",
+          "category": "onboarding"
+        },
+        {
+          "n": 3,
+          "title": "Add 'Skip Tutorial' and 'Help' actions in the welcome modal",
+          "files": "src/components/Onboarding.tsx (new)",
+          "category": "onboarding"
+        },
+        {
+          "n": 4,
+          "title": "Add a re-openable Help/Tutorial entry in Settings",
+          "files": "src/components/SettingsModal.tsx, src/components/Onboarding.tsx (new)",
+          "category": "onboarding"
+        },
+        {
+          "n": 5,
+          "title": "Add coach-mark hints on first map load (Get Rooftops button highlight)",
+          "files": "src/components/Onboarding.tsx (new), src/components/Sidebar.tsx",
+          "category": "onboarding"
+        },
+        {
+          "n": 6,
+          "title": "Build a command palette (Ctrl+K) listing all actions",
+          "files": "src/components/CommandPalette.tsx (new), src/App.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 7,
+          "title": "Command palette: navigation (map/table/territories/follow-ups)",
+          "files": "src/components/CommandPalette.tsx (new)",
+          "category": "ux"
+        },
+        {
+          "n": 8,
+          "title": "Command palette: actions (Get Rooftops, Draw, Filter, Export, Backup)",
+          "files": "src/components/CommandPalette.tsx (new)",
+          "category": "ux"
+        },
+        {
+          "n": 9,
+          "title": "Command palette: jump-to-lead by company/name search",
+          "files": "src/components/CommandPalette.tsx (new)",
+          "category": "ux"
+        },
+        {
+          "n": 10,
+          "title": "Command palette: fuzzy matching + recent commands",
+          "files": "src/components/CommandPalette.tsx (new), src/lib/fuzzy.ts (new)",
+          "category": "ux"
+        },
+        {
+          "n": 11,
+          "title": "Command palette: full keyboard nav (arrows/Enter/Esc) and ARIA combobox roles",
+          "files": "src/components/CommandPalette.tsx (new)",
+          "category": "a11y"
+        },
+        {
+          "n": 12,
+          "title": "Create an i18n module with PT and EN dictionaries",
+          "files": "src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 13,
+          "title": "Add a useT() hook + language state in store, default PT",
+          "files": "src/lib/i18n.ts (new), src/store/appStore.ts",
+          "category": "i18n"
+        },
+        {
+          "n": 14,
+          "title": "Add language toggle (PT/EN) in Settings persisted to localStorage",
+          "files": "src/components/SettingsModal.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 15,
+          "title": "Translate English-only labels in LocationDetails ('Location Details')",
+          "files": "src/components/LocationDetails.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 16,
+          "title": "Translate TableView headers (Company/Industry/Solar/Direct Link)",
+          "files": "src/components/TableView.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 17,
+          "title": "Translate SearchFilter labels (Search Filter, Roof Area, Quick Show, etc.)",
+          "files": "src/components/SearchFilter.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 18,
+          "title": "Translate Sidebar nav labels (Get Rooftops, Draw Rooftops, etc.)",
+          "files": "src/components/Sidebar.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 19,
+          "title": "Translate LocationDetails tab labels (Flag/Solar/Individual/Notes/Metadata/Street View)",
+          "files": "src/components/LocationDetails.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 20,
+          "title": "Mark OSM-tag labels as English-only (not translated) explicitly",
+          "files": "src/components/LocationDetails.tsx, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 21,
+          "title": "Move DROP_REASON_LABELS to PT (currently English) and key by language",
+          "files": "src/types/building.ts, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 22,
+          "title": "Centralize all enum labels (solar/pipeline/use) through i18n",
+          "files": "src/types/building.ts, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 23,
+          "title": "Translate toast/error strings via i18n keys",
+          "files": "src/lib/i18n.ts (new), src/components/Sidebar.tsx, src/components/MapView.tsx",
+          "category": "i18n"
+        },
+        {
+          "n": 24,
+          "title": "Expand BuildingUse enum with 20+ subtypes (hotel/restaurant/hospital/education/data_center)",
+          "files": "src/types/building.ts, src/lib/overpass.ts",
+          "category": "data"
+        },
+        {
+          "n": 25,
+          "title": "Add PT labels for the new building-use subtypes",
+          "files": "src/types/building.ts, src/lib/i18n.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 26,
+          "title": "Update CI_BUILDING classification scoring for new subtypes",
+          "files": "src/lib/overpass.ts",
+          "category": "data"
+        },
+        {
+          "n": 27,
+          "title": "Add a light theme + theme toggle (dark/light) in Settings",
+          "files": "src/components/SettingsModal.tsx, src/index.css, tailwind.config.js",
+          "category": "theme"
+        },
+        {
+          "n": 28,
+          "title": "Persist theme in localStorage and apply on load (class on <html>)",
+          "files": "src/main.tsx, src/components/SettingsModal.tsx",
+          "category": "theme"
+        },
+        {
+          "n": 29,
+          "title": "Replace hardcoded hex colors with CSS variables / Tailwind tokens for theming",
+          "files": "src/index.css, tailwind.config.js, src/components/*",
+          "category": "theme"
+        },
+        {
+          "n": 30,
+          "title": "Add UI density toggle (compact/normal) affecting padding and font sizes",
+          "files": "src/components/SettingsModal.tsx, src/index.css",
+          "category": "theme"
+        },
+        {
+          "n": 31,
+          "title": "Apply density to TableView row height and LocationDetails spacing",
+          "files": "src/components/TableView.tsx, src/components/LocationDetails.tsx",
+          "category": "theme"
+        },
+        {
+          "n": 32,
+          "title": "Add explicit visible focus rings (2px) on all buttons/inputs/selects",
+          "files": "src/index.css",
+          "category": "a11y"
+        },
+        {
+          "n": 33,
+          "title": "Increase focus-ring contrast and test against Windows High Contrast",
+          "files": "src/index.css",
+          "category": "a11y"
+        },
+        {
+          "n": 34,
+          "title": "Audit and fix tab order across all modals (LocationDetails/Settings/SearchFilter)",
+          "files": "src/components/LocationDetails.tsx, src/components/SettingsModal.tsx, src/components/SearchFilter.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 35,
+          "title": "Add focus trap to all modals (focus stays inside while open)",
+          "files": "src/components/LocationDetails.tsx, src/components/SettingsModal.tsx, src/components/SearchFilter.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 36,
+          "title": "Return focus to the triggering element when a modal closes",
+          "files": "src/components/LocationDetails.tsx, src/App.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 37,
+          "title": "Add aria-live='polite' region for toasts and status messages",
+          "files": "src/components/ToastContainer.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 38,
+          "title": "Add aria-live for loading/success/error map banners",
+          "files": "src/components/MapView.tsx, src/App.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 39,
+          "title": "Add aria-label to the duplicate '⎘ Duplicar' button and '×' close buttons",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 40,
+          "title": "Add role=dialog + aria-modal + aria-labelledby to DropLocationDialog",
+          "files": "src/components/DropLocationDialog.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 41,
+          "title": "Ensure Escape closes every modal (DropLocationDialog/Settings already; verify all)",
+          "files": "src/components/DropLocationDialog.tsx, src/hooks/useKeyboard.ts",
+          "category": "a11y"
+        },
+        {
+          "n": 42,
+          "title": "Arrow-up/down navigates TableView rows; Enter opens the lead",
+          "files": "src/components/TableView.tsx, src/hooks/useKeyboard.ts",
+          "category": "a11y"
+        },
+        {
+          "n": 43,
+          "title": "Make table headers proper button-role sortable with aria-sort",
+          "files": "src/components/TableView.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 44,
+          "title": "Add scope='col' to table header cells",
+          "files": "src/components/TableView.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 45,
+          "title": "Add a caption/summary to the leads table for screen readers",
+          "files": "src/components/TableView.tsx",
+          "category": "a11y"
+        },
+        {
+          "n": 46,
+          "title": "Register both lower/upper-case global shortcuts (Shift+T etc.)",
+          "files": "src/hooks/useKeyboard.ts",
+          "category": "a11y"
+        },
+        {
+          "n": 47,
+          "title": "Test/handle AZERTY/QWERTZ layouts using e.code where appropriate",
+          "files": "src/hooks/useKeyboard.ts",
+          "category": "a11y"
+        },
+        {
+          "n": 48,
+          "title": "Add a shortcuts help modal opened with '?'",
+          "files": "src/components/ShortcutsHelp.tsx (new), src/hooks/useKeyboard.ts",
+          "category": "ux"
+        },
+        {
+          "n": 49,
+          "title": "Document all shortcuts (t/m/f///Ctrl+K/Ctrl+Z) in the help modal",
+          "files": "src/components/ShortcutsHelp.tsx (new)",
+          "category": "docs"
+        },
+        {
+          "n": 50,
+          "title": "Add prefers-reduced-motion guard around all animations",
+          "files": "src/index.css",
+          "category": "a11y"
+        },
+        {
+          "n": 51,
+          "title": "Add subtle modal enter/exit transitions (fade+scale)",
+          "files": "src/index.css, src/components/LocationDetails.tsx",
+          "category": "animation"
+        },
+        {
+          "n": 52,
+          "title": "Add toast slide-in/out animation",
+          "files": "src/components/ToastContainer.tsx, src/index.css",
+          "category": "animation"
+        },
+        {
+          "n": 53,
+          "title": "Animate map<->table view transition",
+          "files": "src/App.tsx, src/index.css",
+          "category": "animation"
+        },
+        {
+          "n": 54,
+          "title": "Add hover/active micro-interactions on sidebar nav buttons",
+          "files": "src/components/Sidebar.tsx",
+          "category": "animation"
+        },
+        {
+          "n": 55,
+          "title": "Add skeleton loaders for TableView while leads load",
+          "files": "src/components/TableView.tsx",
+          "category": "loading"
+        },
+        {
+          "n": 56,
+          "title": "Add skeleton/spinner for lazy-loaded modals (better than null fallback)",
+          "files": "src/App.tsx",
+          "category": "loading"
+        },
+        {
+          "n": 57,
+          "title": "Add loading state to PVGIS calc button (exists) and to company lookup",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "loading"
+        },
+        {
+          "n": 58,
+          "title": "Add empty state to TerritoriesPanel ('Sem territórios — desenha um')",
+          "files": "src/components/TerritoriesPanel.tsx (new)",
+          "category": "empty-state"
+        },
+        {
+          "n": 59,
+          "title": "Add empty state to FollowUpsPanel ('Sem ações pendentes')",
+          "files": "src/components/FollowUpsPanel.tsx (new)",
+          "category": "empty-state"
+        },
+        {
+          "n": 60,
+          "title": "Add empty state to ActivityTimeline ('Sem atividade ainda')",
+          "files": "src/components/ActivityTimeline.tsx (new)",
+          "category": "empty-state"
+        },
+        {
+          "n": 61,
+          "title": "Add empty state to Pipeline board and Win/Loss panels",
+          "files": "src/components/PipelineBoard.tsx (new), src/components/WinLossPanel.tsx (new)",
+          "category": "empty-state"
+        },
+        {
+          "n": 62,
+          "title": "Add error state with Retry to TableView/MapView data loads",
+          "files": "src/components/TableView.tsx, src/components/MapView.tsx",
+          "category": "error-state"
+        },
+        {
+          "n": 63,
+          "title": "Make error messages specific+actionable (Overpass timeout/PVGIS/Nominatim)",
+          "files": "src/components/Sidebar.tsx, src/components/MapView.tsx, src/lib/overpass.ts",
+          "category": "error-state"
+        },
+        {
+          "n": 64,
+          "title": "Add 'Retry' button to the load-error banner",
+          "files": "src/components/MapView.tsx, src/components/Sidebar.tsx",
+          "category": "error-state"
+        },
+        {
+          "n": 65,
+          "title": "Add a top-level React error boundary with reload + debug-log export",
+          "files": "src/components/ErrorBoundary.tsx (new), src/main.tsx",
+          "category": "reliability"
+        },
+        {
+          "n": 66,
+          "title": "Show Nominatim failure toast + exponential backoff retries",
+          "files": "src/lib/nominatim.ts, src/components/LocationDetails.tsx",
+          "category": "error-state"
+        },
+        {
+          "n": 67,
+          "title": "Graceful offline degradation: disable+explain online-only actions in Sidebar",
+          "files": "src/components/Sidebar.tsx, src/App.tsx",
+          "category": "reliability"
+        },
+        {
+          "n": 68,
+          "title": "Cache last Overpass results so offline still shows buildings",
+          "files": "src/lib/overpass.ts, src/db/database.ts",
+          "category": "reliability"
+        },
+        {
+          "n": 69,
+          "title": "Allow offline note-taking marked 'pending sync'",
+          "files": "src/components/NotesAndTasks.tsx, src/db/database.ts",
+          "category": "reliability"
+        },
+        {
+          "n": 70,
+          "title": "Add update-available check via GitHub Releases API on startup",
+          "files": "src/lib/updateCheck.ts (new), src/App.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 71,
+          "title": "Show 'Atualização disponível (vX.Y)' toast with download link",
+          "files": "src/lib/updateCheck.ts (new)",
+          "category": "ux"
+        },
+        {
+          "n": 72,
+          "title": "Bump config.appVersion source-of-truth from package.json",
+          "files": "src/config.ts, package.json",
+          "category": "infra"
+        },
+        {
+          "n": 73,
+          "title": "Virtualize TableView rows (windowing) to render only visible ~50",
+          "files": "src/components/TableView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 74,
+          "title": "React.memo TableView rows to avoid re-render churn",
+          "files": "src/components/TableView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 75,
+          "title": "Debounce the keyword filter input feeding the store",
+          "files": "src/components/SearchFilter.tsx, src/hooks/useFilteredBuildings.ts",
+          "category": "perf"
+        },
+        {
+          "n": 76,
+          "title": "Memoize filter predicate separately from buildings array",
+          "files": "src/hooks/useFilteredBuildings.ts",
+          "category": "perf"
+        },
+        {
+          "n": 77,
+          "title": "Dedupe filter logic: have SearchFilter count reuse useFilteredBuildings",
+          "files": "src/components/SearchFilter.tsx, src/hooks/useFilteredBuildings.ts",
+          "category": "refactor"
+        },
+        {
+          "n": 78,
+          "title": "Lower buildingsToGeoJSON allocation by memoizing per-building feature",
+          "files": "src/lib/overpass.ts, src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 79,
+          "title": "Benchmark + verify smooth pan/zoom and table scroll at 10k buildings",
+          "files": "src/components/MapView.tsx, src/components/TableView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 80,
+          "title": "Add a synthetic 10k-building seed/dev tool for perf testing",
+          "files": "src/lib/devSeed.ts (new)",
+          "category": "perf"
+        },
+        {
+          "n": 81,
+          "title": "Throttle map setData updates with requestAnimationFrame batching",
+          "files": "src/components/MapView.tsx",
+          "category": "perf"
+        },
+        {
+          "n": 82,
+          "title": "Add tabular-nums + right-align to numeric table columns consistently",
+          "files": "src/components/TableView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 83,
+          "title": "Add column visibility toggle sidebar in TableView",
+          "files": "src/components/TableView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 84,
+          "title": "Add multi-column sort (Shift+click adds to sort stack) with aria-sort",
+          "files": "src/components/TableView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 85,
+          "title": "Add search history (last 10) to MapSearch with fuzzy matching",
+          "files": "src/components/MapSearch.tsx, src/lib/fuzzy.ts (new)",
+          "category": "ux"
+        },
+        {
+          "n": 86,
+          "title": "Add fuzzy/typo-tolerant keyword filter (Levenshtein) + wildcard",
+          "files": "src/hooks/useFilteredBuildings.ts, src/lib/fuzzy.ts (new)",
+          "category": "ux"
+        },
+        {
+          "n": 87,
+          "title": "Add default-region map center/zoom preset in Settings",
+          "files": "src/components/SettingsModal.tsx, src/components/MapView.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 88,
+          "title": "Add default pipeline-stage + solar-status template for new leads in Settings",
+          "files": "src/components/SettingsModal.tsx, src/components/LocationDetails.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 89,
+          "title": "Add auto-save indicator ('Guardado') after lead edits",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "ux"
+        },
+        {
+          "n": 90,
+          "title": "Add responsive breakpoints: modals snap to bottom-sheet on <1024px",
+          "files": "src/index.css, src/components/LocationDetails.tsx",
+          "category": "responsive"
+        },
+        {
+          "n": 91,
+          "title": "Make the sidebar collapsible to icons-only on narrow widths",
+          "files": "src/components/Sidebar.tsx",
+          "category": "responsive"
+        },
+        {
+          "n": 92,
+          "title": "Add optional anonymous analytics (consented) tracking view/filter/export events",
+          "files": "src/lib/analytics.ts (new), src/components/SettingsModal.tsx",
+          "category": "analytics"
+        },
+        {
+          "n": 93,
+          "title": "Gate analytics behind explicit opt-in toggle, no PII",
+          "files": "src/lib/analytics.ts (new)",
+          "category": "privacy"
+        },
+        {
+          "n": 94,
+          "title": "Add config.defaultAiModel + Settings override; retry next model on 404",
+          "files": "src/config.ts, src/lib/gemini.ts, src/components/SettingsModal.tsx",
+          "category": "reliability"
+        },
+        {
+          "n": 95,
+          "title": "Add consistent number/date formatting helpers (pt-PT) used app-wide",
+          "files": "src/lib/format.ts (new)",
+          "category": "i18n"
+        },
+        {
+          "n": 96,
+          "title": "Add a global loading overlay component reused across long ops",
+          "files": "src/components/LoadingOverlay.tsx (new), src/App.tsx",
+          "category": "loading"
+        },
+        {
+          "n": 97,
+          "title": "Add Playwright E2E for core flow (get rooftops → select → mark → export)",
+          "files": "e2e/core-flow.spec.ts (new), package.json",
+          "category": "test"
+        },
+        {
+          "n": 98,
+          "title": "Add E2E for keyboard-only navigation across modals",
+          "files": "e2e/a11y-keyboard.spec.ts (new)",
+          "category": "test"
+        },
+        {
+          "n": 99,
+          "title": "Add axe-core accessibility checks to E2E (target AAA where feasible)",
+          "files": "e2e/a11y.spec.ts (new)",
+          "category": "a11y"
+        },
+        {
+          "n": 100,
+          "title": "Update README + docs with onboarding, shortcuts, i18n, theming, a11y notes",
+          "files": "README.md, docs/",
+          "category": "docs"
+        }
+      ]
+    }
+  ]
+}

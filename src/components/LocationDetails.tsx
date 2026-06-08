@@ -5,9 +5,15 @@ import { saveLead, duplicateLead, getAllLeads } from "../db/database";
 import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
 import { openExternal, streetViewUrl, googleMapsUrl, googleVerifyUrl } from "../lib/openExternal";
-import { computeSolarFinance, formatEur } from "../lib/solarFinance";
+import { computeFinance, formatEur, suggestBattery, type FinancingModel } from "../lib/solarFinance";
 
 type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "streetview";
+
+const FINANCE_MODELS: { key: FinancingModel; label: string }[] = [
+  { key: "capex", label: "CAPEX" },
+  { key: "opex_ppa", label: "PPA" },
+  { key: "leasing", label: "Leasing" },
+];
 
 export default function LocationDetails() {
   const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
@@ -21,6 +27,10 @@ export default function LocationDetails() {
 
   const [tab, setTab] = useState<Tab>("flag");
   const [calcingSolar, setCalcingSolar] = useState(false);
+  const [financeModel, setFinanceModel] = useState<FinancingModel>("capex");
+  const [shadingLoss, setShadingLoss] = useState(0);
+  const [useOptimal, setUseOptimal] = useState(false);
+  const [withBattery, setWithBattery] = useState(false);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead = selectedBuildingId ? leads[selectedBuildingId] : undefined;
@@ -43,11 +53,13 @@ export default function LocationDetails() {
     if (!building) return;
     setCalcingSolar(true);
     try {
-      const kwp = estimatePeakPower(building.areaSqm);
+      const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);
       const result = await fetchPVGIS({
         lat: building.centroidLat,
         lon: building.centroidLon,
         peakPowerKwp: kwp,
+        shadingLoss,
+        optimal: useOptimal,
       });
       const base = ensureLead();
       const updated = {
@@ -59,6 +71,13 @@ export default function LocationDetails() {
       };
       try { await saveLead(updated); } catch {}
       upsertLead(updated);
+      notify(
+        `${(result.yearlyEnergyKwh / 1000).toFixed(1)} MWh/ano · ${result.specificYield} kWh/kWp · ${result.tilt}°${useOptimal ? " (ótimo)" : ""}` +
+        (result.source === "regional-estimate" ? " (estimativa regional)" : ""),
+        result.source === "regional-estimate" ? "warning" : "success",
+      );
+    } catch (e) {
+      notify(`Erro ao calcular solar: ${e instanceof Error ? e.message : "desconhecido"}`, "error");
     } finally {
       setCalcingSolar(false);
     }
@@ -210,37 +229,82 @@ export default function LocationDetails() {
                 )}
                 <ROField label="Latitude" value={`${building.centroidLat.toFixed(4)}°`} />
               </div>
-              {lead?.monthlyKwh ? (
-                <SolarChart monthlyKwh={lead.monthlyKwh} totalKwh={lead.estimatedKwhPerYear ?? 0} />
-              ) : (
+              {/* Solar calc options */}
+              <div className="grid grid-cols-3 gap-2 items-end">
+                <label className="text-[10px] text-slate-500 flex flex-col gap-1">
+                  Sombreamento {shadingLoss}%
+                  <input
+                    type="range" min={0} max={40} step={5} value={shadingLoss}
+                    onChange={(e) => setShadingLoss(Number(e.target.value))}
+                    className="accent-brand-500"
+                  />
+                </label>
+                <label className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <input type="checkbox" checked={useOptimal} onChange={(e) => setUseOptimal(e.target.checked)} className="accent-brand-500" />
+                  Ângulo ótimo
+                </label>
                 <button
                   type="button"
                   onClick={handleCalcSolar}
                   disabled={calcingSolar}
-                  className="w-full py-2 rounded bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-slate-950 text-sm font-semibold"
+                  className="py-1.5 rounded bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-slate-950 text-xs font-semibold"
                 >
-                  {calcingSolar ? "A calcular…" : "☀️ Calcular Potencial (PVGIS)"}
+                  {calcingSolar ? "A calcular…" : lead?.monthlyKwh ? "↻ Recalcular" : "☀️ Calcular (PVGIS)"}
                 </button>
+              </div>
+
+              {lead?.monthlyKwh && (
+                <SolarChart monthlyKwh={lead.monthlyKwh} totalKwh={lead.estimatedKwhPerYear ?? 0} />
               )}
 
-              {/* Financial / ROI analysis */}
+              {/* Financial / ROI analysis with model selector */}
               {lead?.estimatedKwhPerYear && (() => {
-                const fin = computeSolarFinance(kwp, lead.estimatedKwhPerYear);
+                const battery = withBattery ? suggestBattery(kwp, 0.75) : null;
+                const scr = battery ? battery.newSelfConsumption : 0.75;
+                const fin = computeFinance(financeModel, {
+                  systemKwp: kwp,
+                  annualKwh: lead.estimatedKwhPerYear!,
+                  selfConsumptionRate: scr,
+                });
+                const capexWithBattery = fin.capexEur + (battery?.extraCostEur ?? 0);
                 return (
-                  <div className="mt-2 border-t border-slate-700/50 pt-3">
-                    <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-2">
-                      Análise Financeira (estimativa)
+                  <div className="mt-2 border-t border-slate-700/50 pt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400 uppercase tracking-wide">Análise Financeira</span>
+                      <div className="flex gap-1" role="tablist" aria-label="Modelo de financiamento">
+                        {FINANCE_MODELS.map((m) => (
+                          <button
+                            key={m.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={financeModel === m.key ? "true" : "false"}
+                            onClick={() => setFinanceModel(m.key)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                              financeModel === m.key ? "bg-brand-500 text-slate-950" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
-                      <ROField label="Investimento" value={formatEur(fin.investmentEur)} />
-                      <ROField label="Poupança/ano" value={formatEur(fin.annualSavingsEur)} accent />
+                      <ROField label={financeModel === "capex" ? "Investimento" : "CAPEX (instalador)"} value={formatEur(capexWithBattery)} />
+                      <ROField label="Valor energia/ano" value={formatEur(fin.year1SavingsEur)} accent />
                       <ROField label="Payback" value={Number.isFinite(fin.paybackYears) ? `${fin.paybackYears} anos` : "—"} accent />
+                      <ROField label="VAL (NPV)" value={formatEur(fin.npvEur)} accent />
+                      <ROField label="TIR (IRR)" value={Number.isFinite(fin.irrPct) ? `${fin.irrPct}%` : "—"} />
+                      <ROField label="LCOE" value={`${fin.lcoeEurKwh.toFixed(3)} €/kWh`} />
                       <ROField label="Poupança 25 anos" value={formatEur(fin.lifetimeSavingsEur)} accent />
                       <ROField label="CO₂ evitado/ano" value={`${fin.co2TonnesPerYear} t`} />
-                      <ROField label="Autoconsumo" value="~75%" />
+                      <ROField label="Autoconsumo" value={`~${Math.round(scr * 100)}%`} />
                     </div>
-                    <p className="text-[9px] text-slate-600 mt-2">
-                      Estimativa para prospeção · tarifa 0,16€/kWh · custo escalonado por dimensão.
+                    <label className="text-[10px] text-slate-400 flex items-center gap-1.5 pt-1">
+                      <input type="checkbox" checked={withBattery} onChange={(e) => setWithBattery(e.target.checked)} className="accent-brand-500" />
+                      Incluir bateria {battery ? `(${battery.kwh} kWh, +${formatEur(battery.extraCostEur)})` : ""}
+                    </label>
+                    <p className="text-[9px] text-slate-600">
+                      Estimativa para prospeção · tarifa 0,16€/kWh · injeção 0,045€/kWh · taxa desconto 6% · 25 anos.
                     </p>
                   </div>
                 );
