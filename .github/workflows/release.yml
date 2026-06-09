@@ -25,6 +25,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Cache the Cargo registry + src-tauri/target so release builds don't
+      # recompile every dependency from scratch (Windows Rust builds are slow).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install dependencies
         run: npm ci
 
