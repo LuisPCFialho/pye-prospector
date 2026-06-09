@@ -1,6 +1,7 @@
 import * as turf from "@turf/turf";
 import type { BuildingFeature, Lead, BuildingUse } from "../types/building";
 import { buildingFillColor } from "../types/building";
+import { estimateHeight } from "./roofGeometry";
 
 export interface BBox {
   minLon: number; minLat: number; maxLon: number; maxLat: number;
@@ -306,6 +307,7 @@ export function buildingsToGeoJSON(
           areaSqm: b.areaSqm,
           inferredUse: b.inferredUse ?? null,
           ciScore: b.ciScore ?? null,
+          renderHeight: estimateHeight(b),
           fillColor: color,
           solarStatus: lead?.solarStatus ?? "unknown",
           pipelineStage: lead?.pipelineStage ?? "to_contact",

@@ -8,6 +8,7 @@ import { openExternal, streetViewUrl, googleVerifyUrl } from "../lib/openExterna
 import { resolveCompany, getCachedResolve } from "../lib/companyResolver";
 import { validateField } from "../lib/validation";
 import { scoreLead, scoreColor } from "../lib/leadScore";
+import { getRoofPacking } from "../lib/roofPacking";
 import type { CompanyCandidate, Lead } from "../types/building";
 
 type Tab = "flag" | "solar" | "drop";
@@ -83,7 +84,10 @@ export default function LocationSummary() {
 
   if (!showLocationSummary || !building) return null;
 
-  const kwp = lead?.estimatedKwp ?? estimatePeakPower(building.areaSqm);
+  // Accurate packed layout (real module placement) is the primary kWp source
+  const packing = getRoofPacking(building);
+  const packedKwp = packing.result.kwpDerated;
+  const kwp = lead?.estimatedKwp ?? (packedKwp > 0 ? packedKwp : estimatePeakPower(building.areaSqm));
 
   function ensureLead() {
     return lead ?? {
@@ -117,7 +121,14 @@ export default function LocationSummary() {
     if (!building) return;
     setCalcing(true);
     try {
-      const result = await fetchPVGIS({ lat: building.centroidLat, lon: building.centroidLon, peakPowerKwp: kwp });
+      // Use packed kWp + real roof tilt/azimuth for an accurate estimate
+      const result = await fetchPVGIS({
+        lat: building.centroidLat,
+        lon: building.centroidLon,
+        peakPowerKwp: kwp,
+        angle: packing.roof.tiltDeg,
+        aspect: packing.roof.azimuthDeg,
+      });
       const updated = {
         ...ensureLead(),
         estimatedKwhPerYear: result.yearlyEnergyKwh,
@@ -236,13 +247,18 @@ export default function LocationSummary() {
               value={building.areaSqm.toLocaleString("pt-PT")}
             />
 
-            {/* Solar potential */}
+            {/* Solar potential — packed layout (primary metric) */}
             <FieldRow
               label="Potencial Solar"
               prefix="kWp"
               value={kwp.toFixed(1)}
               accent
             />
+            {packing.result.modules > 0 && (
+              <div className="text-[10px] text-[#8892a4] -mt-2">
+                {packing.result.modules} módulos Trina 630W · {packing.roof.mount === "flat" ? "telhado plano" : "telhado inclinado"} · {packing.result.bearingDeg}°
+              </div>
+            )}
 
             {/* Existing PV detection badge */}
             {hasSolarOnOSM(building) && (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
-import { Layers, Maximize2, Filter } from "lucide-react";
+import { Layers, Maximize2, Filter, Box, Grid3x3 } from "lucide-react";
 import { config } from "../config";
 import { setMapInstance } from "../lib/mapInstance";
 import { useAppStore } from "../store/appStore";
@@ -8,6 +8,7 @@ import { buildingsToGeoJSON } from "../lib/overpass";
 import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
 import { useFilteredBuildings, useIsFilterActive } from "../hooks/useFilteredBuildings";
+import { getRoofPacking } from "../lib/roofPacking";
 import * as turf from "@turf/turf";
 
 const OSM_STYLE: maplibregl.StyleSpecification = {
@@ -30,6 +31,7 @@ const MAPTILER_STYLE = (key: string) =>
 
 const BUILDINGS_SOURCE = "buildings";
 const DRAW_SOURCE = "draw-polygon";
+const PANELS_SOURCE = "panels";
 
 function addAppLayers(map: maplibregl.Map) {
   if (map.getSource(BUILDINGS_SOURCE)) return;
@@ -90,6 +92,45 @@ function addAppLayers(map: maplibregl.Map) {
     },
   });
 
+  // 3D building extrusion (hidden until 3D mode is enabled)
+  map.addLayer({
+    id: "buildings-3d",
+    type: "fill-extrusion",
+    source: BUILDINGS_SOURCE,
+    minzoom: 14,
+    layout: { visibility: "none" },
+    paint: {
+      "fill-extrusion-color": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false], "#06b6d4",
+        ["boolean", ["feature-state", "multiselected"], false], "#f97316",
+        ["get", "fillColor"],
+      ],
+      "fill-extrusion-height": ["coalesce", ["get", "renderHeight"], 7],
+      "fill-extrusion-base": 0,
+      "fill-extrusion-opacity": 0.85,
+      "fill-extrusion-vertical-gradient": true,
+    },
+  });
+
+  // Packed solar panels for the selected building
+  map.addSource(PANELS_SOURCE, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer({
+    id: "panels-fill",
+    type: "fill",
+    source: PANELS_SOURCE,
+    paint: { "fill-color": "#1e3a8a", "fill-opacity": 0.85 },
+  });
+  map.addLayer({
+    id: "panels-outline",
+    type: "line",
+    source: PANELS_SOURCE,
+    paint: { "line-color": "#60a5fa", "line-width": 0.4 },
+  });
+
   // Draw polygon source
   map.addSource(DRAW_SOURCE, {
     type: "geojson",
@@ -114,8 +155,12 @@ export default function MapView() {
   const mapRef       = useRef<maplibregl.Map | null>(null);
   const selectedIdRef = useRef<number | string | null>(null);
   const drawCoordsRef = useRef<[number, number][]>([]);
+  const is3DRef = useRef(false);
+
+  const [showPanels, setShowPanels] = useState(true);
 
   const leads               = useAppStore((s) => s.leads);
+  const buildings           = useAppStore((s) => s.buildings);
   const drawMode            = useAppStore((s) => s.drawMode);
   const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
   const loadError           = useAppStore((s) => s.loadError);
@@ -192,6 +237,11 @@ export default function MapView() {
         );
         const src = map.getSource(BUILDINGS_SOURCE) as maplibregl.GeoJSONSource | undefined;
         if (src) src.setData(geojson);
+        // Re-assert 3D mode after a style switch (setStyle wipes layers)
+        if (is3DRef.current && map.getLayer("buildings-3d")) {
+          map.setLayoutProperty("buildings-3d", "visibility", "visible");
+          map.setLayoutProperty("buildings-fill", "visibility", "none");
+        }
       }
     });
 
@@ -346,6 +396,28 @@ export default function MapView() {
     if (b) map.easeTo({ center: [b.centroidLon, b.centroidLat], duration: 400 });
   }, [selectedBuildingId]);
 
+  // Draw packed panels for the selected building
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const setPanels = (fc: GeoJSON.FeatureCollection) => {
+      const src = map.getSource(PANELS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+      if (src) src.setData(fc);
+    };
+    if (!selectedBuildingId || !showPanels) {
+      setPanels({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    const b = buildings.find((x) => x.id === selectedBuildingId);
+    if (!b) { setPanels({ type: "FeatureCollection", features: [] }); return; }
+    try {
+      const { result } = getRoofPacking(b);
+      setPanels({ type: "FeatureCollection", features: result.panels });
+    } catch {
+      setPanels({ type: "FeatureCollection", features: [] });
+    }
+  }, [selectedBuildingId, showPanels, buildings]);
+
   return (
     <>
       <div className="map-container">
@@ -415,14 +487,27 @@ export default function MapView() {
         </div>
       )}
 
-      <BottomToolbar mapRef={mapRef} />
+      <BottomToolbar
+        mapRef={mapRef}
+        is3DRef={is3DRef}
+        showPanels={showPanels}
+        onTogglePanels={() => setShowPanels((v) => !v)}
+      />
     </>
   );
 }
 
-function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> }) {
+function BottomToolbar({
+  mapRef, is3DRef, showPanels, onTogglePanels,
+}: {
+  mapRef: RefObject<maplibregl.Map | null>;
+  is3DRef: React.MutableRefObject<boolean>;
+  showPanels: boolean;
+  onTogglePanels: () => void;
+}) {
   const [satellite, setSatellite] = useState(!!config.maptilerApiKey);
   const [fullscreen, setFullscreen] = useState(false);
+  const [is3D, setIs3D] = useState(false);
 
   function toggleLayers() {
     const map = mapRef.current;
@@ -439,6 +524,24 @@ function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> })
     }
   }
 
+  function toggle3D() {
+    const map = mapRef.current;
+    if (!map) return;
+    const next = !is3D;
+    setIs3D(next);
+    is3DRef.current = next;
+    if (next) {
+      map.setMaxPitch(75);
+      if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
+      if (map.getLayer("buildings-fill")) map.setLayoutProperty("buildings-fill", "visibility", "none");
+      map.easeTo({ pitch: 55, bearing: -20, duration: 700 });
+    } else {
+      if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "none");
+      if (map.getLayer("buildings-fill")) map.setLayoutProperty("buildings-fill", "visibility", "visible");
+      map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
+    }
+  }
+
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -449,22 +552,25 @@ function BottomToolbar({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> })
     }
   }
 
+  const btn = (active: boolean) =>
+    `w-10 h-10 rounded-xl border flex items-center justify-center shadow-lg transition-colors ${
+      active
+        ? "bg-[#f97316] border-[#f97316] text-white"
+        : "bg-[#13131f]/95 border-[#1e1f30] hover:bg-[#1e1f30] text-[#c8d0df]"
+    }`;
+
   return (
     <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex gap-2">
-      <button
-        type="button"
-        title={satellite ? "Mapa de ruas" : "Vista satélite"}
-        onClick={toggleLayers}
-        className="w-10 h-10 rounded-xl bg-[#13131f]/95 border border-[#1e1f30] hover:bg-[#1e1f30] text-[#c8d0df] flex items-center justify-center shadow-lg transition-colors"
-      >
+      <button type="button" title={satellite ? "Mapa de ruas" : "Vista satélite"} onClick={toggleLayers} className={btn(false)}>
         <Layers size={16} />
       </button>
-      <button
-        type="button"
-        title={fullscreen ? "Sair de fullscreen" : "Fullscreen"}
-        onClick={toggleFullscreen}
-        className="w-10 h-10 rounded-xl bg-[#13131f]/95 border border-[#1e1f30] hover:bg-[#1e1f30] text-[#c8d0df] flex items-center justify-center shadow-lg transition-colors"
-      >
+      <button type="button" title={is3D ? "Vista 2D" : "Vista 3D"} aria-pressed={is3D ? "true" : "false"} onClick={toggle3D} className={btn(is3D)}>
+        <Box size={16} />
+      </button>
+      <button type="button" title={showPanels ? "Ocultar painéis" : "Mostrar painéis"} aria-pressed={showPanels ? "true" : "false"} onClick={onTogglePanels} className={btn(showPanels)}>
+        <Grid3x3 size={16} />
+      </button>
+      <button type="button" title={fullscreen ? "Sair de fullscreen" : "Fullscreen"} onClick={toggleFullscreen} className={btn(false)}>
         <Maximize2 size={16} />
       </button>
     </div>

@@ -1,0 +1,3039 @@
+{
+  "phases": [
+    {
+      "number": 1,
+      "theme": "PHASE A — Accurate Panel Layout & kWp",
+      "goal": "Replace the area*0.65*0.18 guess with a real geometric module-packing engine: place 2.278m x 1.134m modules inside each roof polygon honoring setbacks, row spacing (GCR), and principal-axis orientation; draw the packed panels on the map; derive precise kWp; expose an estimate-vs-packed confidence so every downstream PVGIS/finance number flows from real geometry.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Create src/lib/packing.ts module skeleton with PackResult type (count, kwp, rectangles, orientation, gcr, setbackM, confidence)",
+          "files": "src/lib/packing.ts (new)",
+          "category": "layout"
+        },
+        {
+          "n": 2,
+          "title": "Add MODULE constant: 2.278m x 1.134m landscape footprint, 0.02m colGap, configurable Wp (default 550)",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 3,
+          "title": "Install/import @turf submodules (boolean-contains, transform-rotate, bbox, buffer, convex, area, centroid) to guarantee helpers exist on turf v7",
+          "files": "package.json, src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 4,
+          "title": "Implement principalAxisAngle(poly): convex hull then test each hull-edge bearing, rotate by -bearing, measure bbox area, keep smallest (OMBB)",
+          "files": "src/lib/packing.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 5,
+          "title": "Implement applySetback(poly, setbackM): turf.buffer negative inward, return null when result undefined or area < 5 m^2",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 6,
+          "title": "Implement local-metre grid generator using lat scale 111320 and lon scale 111320*cos(latRad) around polygon centroid",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 7,
+          "title": "Rotate inset polygon by -theta about centroid pivot before gridding (transformRotate degrees clockwise)",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 8,
+          "title": "Step the grid by (moduleW+colGap) horizontally and (footprintDepth+rowGap) vertically across the rotated bbox",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 9,
+          "title": "Keep a cell only when turf.booleanContains(rotInset, cell) passes; collect kept cells",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 10,
+          "title": "Rotate each kept cell back by +theta about the same pivot to recover real-world panel rectangles",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 11,
+          "title": "Try both portrait and landscape module orientations, keep whichever yields more modules",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 12,
+          "title": "Compute kwp = count * Wp / 1000 and return alongside the rectangle FeatureCollection",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 13,
+          "title": "Compute winter-solstice row pitch: alpha = 90 - lat - 23.45, rowGap = L*sin(tilt)/tan(alpha)",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 14,
+          "title": "Compute GCR = d/(d+rowGap) and store it on PackResult for transparency",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 15,
+          "title": "Set rowGap = 0 for pitched coplanar roofs (only setback applies, denser packing)",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 16,
+          "title": "Default flat-roof tilt 10-15deg for row-pitch math; expose tilt as a parameter",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 17,
+          "title": "Pass building latitude into row-pitch so Lisbon/Porto/Faro alpha differ correctly",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 18,
+          "title": "Handle MultiPolygon roofs: pack each polygon (wing) independently, sum counts, merge rectangles",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 19,
+          "title": "Cache computed theta on a per-building basis to avoid recomputing the OMBB each render",
+          "files": "src/lib/packing.ts, src/types/building.ts",
+          "category": "layout"
+        },
+        {
+          "n": 20,
+          "title": "Add default fire/access setback constant: 1.0m for C&I flat roofs",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 21,
+          "title": "Bump setback to 1.83m when any roof side exceeds 76m (NFPA/IFC large-roof rule)",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 22,
+          "title": "Add ridge/parapet 0.45m-0.91m setback variants keyed on coverage fraction (under/over 33%)",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 23,
+          "title": "Document Portugal ANEPC/DGS 0.5-1.0m edge/parapet keep-off rationale inline",
+          "files": "src/lib/packing.ts, docs/DATA-SOURCES.md",
+          "category": "docs"
+        },
+        {
+          "n": 24,
+          "title": "Guard tiny/degenerate roofs: return count 0 cleanly when inset is null after setback",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 25,
+          "title": "Add fast usable-fraction estimator estimateKwpFast(area, roofType) as a cheap pre-pack tier",
+          "files": "src/lib/geodesy.ts",
+          "category": "layout"
+        },
+        {
+          "n": 26,
+          "title": "Define USABLE fractions table: flat_tilted 0.50, flat_ew 0.65, pitched 0.75, unknown 0.50",
+          "files": "src/lib/geodesy.ts",
+          "category": "layout"
+        },
+        {
+          "n": 27,
+          "title": "Compute footprint per roof type: flat-tilted moduleArea/GCR (~5.2 m^2), pitched moduleArea/0.95",
+          "files": "src/lib/geodesy.ts",
+          "category": "layout"
+        },
+        {
+          "n": 28,
+          "title": "Rewrite areaToKwp to use roof-type usable fraction + footprint instead of fixed 0.65/2.58",
+          "files": "src/lib/geodesy.ts",
+          "category": "layout"
+        },
+        {
+          "n": 29,
+          "title": "Replace estimatePeakPower body to call the new usable-fraction estimate (keep signature stable)",
+          "files": "src/lib/pvgis.ts",
+          "category": "layout"
+        },
+        {
+          "n": 30,
+          "title": "Default unknown roof-type usable fraction to 0.50 so legacy callers stay conservative",
+          "files": "src/lib/pvgis.ts, src/lib/geodesy.ts",
+          "category": "layout"
+        },
+        {
+          "n": 31,
+          "title": "Add an OBSTACLE_DERATE table (flat_tilted 0.90, pitched 0.95, unknown 0.88) applied to headline kWp",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 32,
+          "title": "Keep raw packed count separate from derated headline kWp on PackResult",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 33,
+          "title": "Do NOT fabricate panels for obstacles: apply transparent derate only, never draw fake rectangles",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 34,
+          "title": "Optional obstacle exclusion: pull man_made=chimney, building:part, roof:material=glass from Overpass",
+          "files": "src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 35,
+          "title": "turf.difference obstacle polygons from the inset before gridding when obstacle geometry exists",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 36,
+          "title": "Tag confidence: 'packed' when geometry packing ran, 'estimate' when only fast tier used",
+          "files": "src/lib/packing.ts, src/types/building.ts",
+          "category": "layout"
+        },
+        {
+          "n": 37,
+          "title": "Surface estimate-vs-packed delta (percent) so users see how far the heuristic was off",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 38,
+          "title": "Memoize packing result per building id in a module-level cache keyed on geometry+params hash",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 39,
+          "title": "Add packBuilding(building, opts) facade returning PackResult from a BuildingFeature",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 40,
+          "title": "Add packedKwp field to Lead so the precise value persists once computed",
+          "files": "src/types/building.ts",
+          "category": "layout"
+        },
+        {
+          "n": 41,
+          "title": "Persist packed rectangles GeoJSON (or a compact RLE) per lead for redraw without recompute",
+          "files": "src/types/building.ts, src/db/database.ts",
+          "category": "layout"
+        },
+        {
+          "n": 42,
+          "title": "Wire LocationDetails kWp readout to packed kWp, falling back to estimate when not yet packed",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 43,
+          "title": "Feed packed kWp into fetchPVGIS as peakPowerKwp at LocationDetails call site (line 58)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 44,
+          "title": "Feed packed kWp into fetchPVGIS at LocationSummary call site (line 120)",
+          "files": "src/components/LocationSummary.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 45,
+          "title": "Use packed kWp in pdfReport computeFinance call so reports reflect real layout",
+          "files": "src/lib/pdfReport.ts",
+          "category": "layout"
+        },
+        {
+          "n": 46,
+          "title": "Use packed kWp in leadScore size sub-score instead of estimatePeakPower(area)",
+          "files": "src/lib/leadScore.ts",
+          "category": "layout"
+        },
+        {
+          "n": 47,
+          "title": "Use packed kWp in useFilteredBuildings kWp filter so map filtering matches reality",
+          "files": "src/hooks/useFilteredBuildings.ts",
+          "category": "layout"
+        },
+        {
+          "n": 48,
+          "title": "Use packed kWp in TableView kWp column + total kWp aggregation",
+          "files": "src/components/TableView.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 49,
+          "title": "Use packed kWp in SearchFilter kWp range computation",
+          "files": "src/components/SearchFilter.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 50,
+          "title": "Add 'Recompute layout' action in LocationDetails that triggers packBuilding and updates the lead",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 51,
+          "title": "Show module count, kWp, GCR and setback used in a small layout summary card",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 52,
+          "title": "Show estimate-vs-packed confidence badge (e.g. 'packed: 412 kWp, was est 380')",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "layout"
+        },
+        {
+          "n": 53,
+          "title": "Add panels-fill GeoJSON source for packed rectangles in addAppLayers",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 54,
+          "title": "Add panels-fill layer (dark-blue #1e3a8a, opacity ~0.85) above buildings-fill",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 55,
+          "title": "Add panels-outline line layer for crisp module edges at high zoom",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 56,
+          "title": "Populate panels source for the selected building only; setData([]) on deselect",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 57,
+          "title": "Gate panels-fill with minzoom ~17 so individual modules only render when zoomed in",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 58,
+          "title": "Re-add panels source/layer inside the styledata guard so they survive setStyle",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 59,
+          "title": "Clear panels source on selection change to avoid stale rectangles from prior building",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 60,
+          "title": "Add a 'Show panel layout' toggle that computes+draws packing for the selected building",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 61,
+          "title": "Run packing in a requestIdleCallback/microtask so it never blocks the click handler",
+          "files": "src/components/MapView.tsx, src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 62,
+          "title": "Add Vitest to devDependencies and a vitest.config for src/lib unit tests",
+          "files": "package.json, vitest.config.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 63,
+          "title": "Test: flat rectangular roof packed count within ~5% of hand calculation",
+          "files": "src/lib/packing.test.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 64,
+          "title": "Test: pitched roof packs denser than equivalent flat-tilted roof (rowGap=0 vs >0)",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 65,
+          "title": "Test ORIENTATION INVARIANCE: rotate input polygon any angle -> identical module count",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 66,
+          "title": "Test: tiny roof returns count 0 after setback (inset null path)",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 67,
+          "title": "Test: setback bumps to 1.83m when a side exceeds 76m",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 68,
+          "title": "Test: rowGap formula matches winter-solstice no-shade for Lisbon latitude",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 69,
+          "title": "Test: portrait vs landscape selection picks the higher count",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 70,
+          "title": "Test: MultiPolygon roof sums per-wing counts correctly",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 71,
+          "title": "Test: principalAxisAngle aligns rows with the longest wall on an L-shaped roof",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 72,
+          "title": "Test: obstacle difference removes modules overlapping a chimney polygon",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 73,
+          "title": "Test: areaToKwp roof-type fractions produce expected module counts",
+          "files": "src/lib/geodesy.test.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 74,
+          "title": "Test: estimatePeakPower delegates to usable-fraction estimate and stays non-negative",
+          "files": "src/lib/pvgis.test.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 75,
+          "title": "Add a fixture set of real OSM warehouse polygons for regression packing tests",
+          "files": "src/lib/__fixtures__/roofs.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 76,
+          "title": "Add JSDoc to every exported packing function with units (metres, degrees, Wp)",
+          "files": "src/lib/packing.ts",
+          "category": "docs"
+        },
+        {
+          "n": 77,
+          "title": "Guard against self-intersecting/kinked roof rings before packing (turf kinks check)",
+          "files": "src/lib/packing.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 78,
+          "title": "Simplify very large/complex roof rings (turf.simplify tolerance ~0.3m) before OMBB to bound cost",
+          "files": "src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 79,
+          "title": "Cap grid cell count and bail to fast estimate if a pathological roof would exceed N cells",
+          "files": "src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 80,
+          "title": "Expose module spec (W,H,Wp,colGap) via a config block so different module models can be swapped",
+          "files": "src/config.ts, src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 81,
+          "title": "Add per-building override for setback and tilt in LocationDetails (advanced panel)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 82,
+          "title": "Recompute packing when user changes setback/tilt overrides and redraw immediately",
+          "files": "src/components/LocationDetails.tsx, src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 83,
+          "title": "Show usable-area m^2 (inset area) vs gross roof m^2 in the layout card",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 84,
+          "title": "Add a coverage-fraction readout (module area / gross roof area) to sanity-check packing",
+          "files": "src/components/LocationDetails.tsx, src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 85,
+          "title": "Store roof orientation theta on the lead for reuse by the orientation arrow (Phase E)",
+          "files": "src/types/building.ts, src/lib/packing.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 86,
+          "title": "Add deterministic tie-break (prefer landscape) when portrait/landscape counts are equal",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 87,
+          "title": "Round kWp consistently (1 decimal) across packing and finance to avoid display drift",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 88,
+          "title": "Validate Wp and module dimensions at packing entry (fail fast on zero/negative)",
+          "files": "src/lib/packing.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 89,
+          "title": "Add a batch packing utility to compute packed kWp for all visible buildings off the main thread budget",
+          "files": "src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 90,
+          "title": "Throttle batch packing so it never packs more than K buildings per idle frame",
+          "files": "src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 91,
+          "title": "Show packed-vs-estimate aggregate delta in TableView footer (total packed kWp)",
+          "files": "src/components/TableView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 92,
+          "title": "Replace pvgis.ts PVGISInput peakPowerKwp comment that references the 0.18 heuristic",
+          "files": "src/lib/pvgis.ts",
+          "category": "docs"
+        },
+        {
+          "n": 93,
+          "title": "Document the full packing pipeline (OMBB -> setback -> grid -> contains -> derate) in ARCHITECTURE.md",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 94,
+          "title": "Add a confidence enum (high/medium/low) derived from roof regularity + packing path",
+          "files": "src/lib/packing.ts",
+          "category": "layout"
+        },
+        {
+          "n": 95,
+          "title": "Flag non-rectangular / very-large roofs for manual ortho verification in the layout card",
+          "files": "src/components/LocationDetails.tsx, src/lib/leadScore.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 96,
+          "title": "Add unit test ensuring packed kWp flows unchanged into computeFinance capex tiers",
+          "files": "src/lib/solarFinance.test.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 97,
+          "title": "Add a 'estimate only' fast path flag to skip packing for low-confidence/tiny roofs in bulk",
+          "files": "src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 98,
+          "title": "Emit a structured warning (not console.log) when packing falls back to estimate",
+          "files": "src/lib/packing.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 99,
+          "title": "Add npm script 'test' (vitest run) and 'test:watch' for the packing suite",
+          "files": "package.json",
+          "category": "testing"
+        },
+        {
+          "n": 100,
+          "title": "Verify the full chain end-to-end: pack -> draw -> PVGIS -> finance for a sample warehouse",
+          "files": "src/components/LocationDetails.tsx, src/lib/packing.ts",
+          "category": "testing"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "theme": "PHASE B — Roof Intelligence",
+      "goal": "Derive each roof's real orientation, tilt, azimuth and plane structure from geometry plus OSM roof tags, classify flat vs pitched, split multi-plane roofs, estimate building height from levels, and feed PVGIS the true angles per roof so energy and finance numbers reflect the actual rooftop instead of a south/30 assumption.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Create src/lib/roofGeometry.ts with a RoofModel type (planes, azimuth, tilt, shape, isFlat, heightM, confidence)",
+          "files": "src/lib/roofGeometry.ts (new)",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 2,
+          "title": "Project roof ring to local ENU metres before any axis math (lat/lon to metres around centroid)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 3,
+          "title": "Compute principal axis via min rotated rectangle on the ENU-projected ring (convex calipers)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 4,
+          "title": "Derive E-W axis as principalAxis+90 and N-S axis as principalAxis+0 for plane orientation",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 5,
+          "title": "Classify flat vs pitched from building tag first (warehouse/industrial -> flat)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 6,
+          "title": "Treat roof as pitched only when roof:shape is gabled/hipped or building is house-like",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 7,
+          "title": "Read roof:shape tag (flat, gabled, hipped, gambrel, skillion) and map to a RoofShape enum",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 8,
+          "title": "Read roof:orientation tag (along/across) to disambiguate ridge direction",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 9,
+          "title": "Read roof:direction tag and document that it is the DOWNSLOPE direction, not the ridge",
+          "files": "src/lib/roofGeometry.ts, docs/DATA-SOURCES.md",
+          "category": "docs"
+        },
+        {
+          "n": 10,
+          "title": "Read roof:angle / roof:slope tag and use it as tilt when present",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 11,
+          "title": "Default flat-roof azimuth to south (0) and tilt to 10-15deg for tilted-rack flat C&I",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 12,
+          "title": "Add an east-west flat layout mode (azimuth +/-90, low tilt) as an alternative flat plane set",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 13,
+          "title": "Segment a gabled roof into two planes perpendicular to the ridge line",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 14,
+          "title": "Assign gabled plane azimuths as principalAxis+90 and principalAxis+270",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 15,
+          "title": "Split each gabled plane's area as ~half the footprint (adjust for hip cut)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 16,
+          "title": "Default pitched tilt to ~25-30deg when no roof:angle tag is available",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 17,
+          "title": "Estimate building height from height tag (strip units), else building:levels*3.2",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 18,
+          "title": "Fallback height by use: warehouse/industrial ~8-10m, retail ~6m when no tags",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 19,
+          "title": "Parse building:levels safely (numeric, >0) with NaN guards",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 20,
+          "title": "Store estimated heightM on the RoofModel for extrusion (Phase D) and shading reuse",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 21,
+          "title": "Add buildRoofModel(building) facade returning a RoofModel from a BuildingFeature",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 22,
+          "title": "Query building:levels in the Overpass query so the tag is available",
+          "files": "src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 23,
+          "title": "Query roof:shape, roof:orientation, roof:direction, roof:angle, height tags in Overpass",
+          "files": "src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 24,
+          "title": "Preserve these roof tags through elementToBuilding into rawTags (already kept) and surface needed ones",
+          "files": "src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 25,
+          "title": "Add inferredHeightM + roofShape fields to BuildingFeature computed at ingest",
+          "files": "src/types/building.ts, src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 26,
+          "title": "Add azimuth + tilt + isFlat fields to the persisted roof model on Lead",
+          "files": "src/types/building.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 27,
+          "title": "Pass real azimuth+tilt to fetchPVGIS at LocationDetails call site instead of default south/30",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 28,
+          "title": "Pass real azimuth+tilt to fetchPVGIS at LocationSummary call site (line 120)",
+          "files": "src/components/LocationSummary.tsx",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 29,
+          "title": "Flat warehouse path: single PVGIS call at south/tilt with optimal off (keep fast path)",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 30,
+          "title": "Gabled path: two PVGIS calls (each plane azimuth/tilt) summed for total annual energy",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 31,
+          "title": "Add fetchPVGISMultiPlane(planes) helper that sums per-plane yearly + merges monthly arrays",
+          "files": "src/lib/pvgis.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 32,
+          "title": "Split packed kWp across planes by plane area so each PVGIS call gets the right peakPower",
+          "files": "src/lib/pvgis.ts, src/lib/packing.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 33,
+          "title": "Pack each roof plane in its own orientation (Phase A packing per plane) for pitched roofs",
+          "files": "src/lib/packing.ts, src/lib/roofGeometry.ts",
+          "category": "layout"
+        },
+        {
+          "n": 34,
+          "title": "Cache the RoofModel per building id (geometry+tags hash) to avoid recomputation",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "performance"
+        },
+        {
+          "n": 35,
+          "title": "Add confidence scoring for the roof model (tag-backed > geometry-only > default)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 36,
+          "title": "Flag non-rectangular, near-square, or very large roofs for manual ortho review",
+          "files": "src/lib/roofGeometry.ts, src/lib/leadScore.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 37,
+          "title": "Add a 'verify on ortophoto' hint linking to DGT WMS ortho when confidence is low",
+          "files": "src/components/LocationDetails.tsx, src/config.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 38,
+          "title": "Treat OSM roof tags strictly as overrides on top of geometry inference, not the primary source",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 39,
+          "title": "Fix stale pvgis.ts comments that imply fixed south/30 and the 0.18 heuristic",
+          "files": "src/lib/pvgis.ts",
+          "category": "docs"
+        },
+        {
+          "n": 40,
+          "title": "Update DATA-SOURCES.md roof tag section (roof:direction downslope, levels*3.2, shape mapping)",
+          "files": "docs/DATA-SOURCES.md",
+          "category": "docs"
+        },
+        {
+          "n": 41,
+          "title": "Show roof type (flat/pitched + shape) in LocationDetails",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 42,
+          "title": "Show inferred azimuth and tilt with their source (tag vs inferred) in LocationDetails",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 43,
+          "title": "Show estimated building height + how it was derived (height tag / levels / default)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 44,
+          "title": "Add per-plane energy breakdown in LocationDetails for gabled roofs (plane A vs B kWh)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 45,
+          "title": "Add roof-shape icon/indicator (flat vs pitched) in TableView rows",
+          "files": "src/components/TableView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 46,
+          "title": "Add roof-type filter (flat / pitched / unknown) to SearchFilter",
+          "files": "src/components/SearchFilter.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 47,
+          "title": "Adjust leadScore size sub-score using plane-aware usable area, not raw footprint",
+          "files": "src/lib/leadScore.ts, src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 48,
+          "title": "Add a roof-quality sub-score (orientation/tilt suitability) to the lead score breakdown",
+          "files": "src/lib/leadScore.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 49,
+          "title": "Use azimuth suitability (south-facing bonus) to rank pitched roofs in leadScore",
+          "files": "src/lib/leadScore.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 50,
+          "title": "Include roof model + angles in the PDF report so proposals show real orientation",
+          "files": "src/lib/pdfReport.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 51,
+          "title": "Create src/lib/roofGeometry.test.ts scaffold and Vitest wiring",
+          "files": "src/lib/roofGeometry.test.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 52,
+          "title": "Test: warehouse tag classifies as flat regardless of footprint shape",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 53,
+          "title": "Test: gabled roof produces two planes with azimuths 180deg apart",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 54,
+          "title": "Test: principal axis on a rotated rectangle returns the long-edge bearing",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 55,
+          "title": "Test: height from 'height=12 m' parses to 12; from levels=3 parses to 9.6",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 56,
+          "title": "Test: no-tag warehouse falls back to ~8m height default",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 57,
+          "title": "Test: roof:angle tag overrides default tilt",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 58,
+          "title": "Test: roof model azimuth invariant to lon/lat translation (ENU projection correctness)",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 59,
+          "title": "Test: fetchPVGISMultiPlane sums two plane yields and merges 12-month arrays",
+          "files": "src/lib/pvgis.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 60,
+          "title": "Test: plane area split assigns peakPower proportionally",
+          "files": "src/lib/pvgis.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 61,
+          "title": "Add fixtures for flat, gabled, hipped and L-shaped roofs",
+          "files": "src/lib/__fixtures__/roofs.ts",
+          "category": "testing"
+        },
+        {
+          "n": 62,
+          "title": "Add JSDoc with units to all roofGeometry exports (degrees true-north, metres)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "docs"
+        },
+        {
+          "n": 63,
+          "title": "Guard against degenerate rings (collinear points) in principal-axis computation",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 64,
+          "title": "Handle MultiPolygon roofs: build a RoofModel per polygon (wing) and aggregate",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 65,
+          "title": "Detect skillion (mono-pitch) roofs and emit a single tilted plane in roof:direction",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 66,
+          "title": "Detect hipped roofs and approximate as 2 dominant planes (ignore minor hips)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 67,
+          "title": "Clamp tilt to [0,60] and azimuth to [-180,180] before passing to PVGIS",
+          "files": "src/lib/roofGeometry.ts, src/lib/pvgis.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 68,
+          "title": "Add an optimal-angles fallback: when roof model confidence is low, request PVGIS optimalangles",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 69,
+          "title": "Show 'angles optimised by PVGIS' note when optimal path was used",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 70,
+          "title": "Cache PVGIS multi-plane results per building to avoid duplicate network calls",
+          "files": "src/lib/pvgis.ts",
+          "category": "performance"
+        },
+        {
+          "n": 71,
+          "title": "Add abort handling for the multi-plane PVGIS calls (cancel on deselect)",
+          "files": "src/components/LocationDetails.tsx, src/lib/pvgis.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 72,
+          "title": "Aggregate monthlyAverageKwh across planes for the SolarChart",
+          "files": "src/components/SolarChart.tsx, src/lib/pvgis.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 73,
+          "title": "Display per-plane azimuth arrows in LocationDetails preview (mini diagram)",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 74,
+          "title": "Persist roof model fields in the DB schema (azimuth, tilt, shape, heightM)",
+          "files": "src/db/database.ts, src/types/building.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 75,
+          "title": "Migrate existing leads: backfill roof model lazily on first open",
+          "files": "src/db/database.ts, src/components/LocationDetails.tsx",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 76,
+          "title": "Add a roof-confidence column to TableView for triage",
+          "files": "src/components/TableView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 77,
+          "title": "Sort/filter by roof confidence so low-confidence roofs can be verified first",
+          "files": "src/components/TableView.tsx, src/components/SearchFilter.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 78,
+          "title": "Expose renderHeight (from roof model) in buildingsToGeoJSON properties for Phase D",
+          "files": "src/lib/overpass.ts, src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 79,
+          "title": "Compute renderHeight once at GeoJSON build time, never in a paint expression",
+          "files": "src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 80,
+          "title": "Add a parseHeight util (height tag -> levels*3.2 -> use default) shared by overpass + roofGeometry",
+          "files": "src/lib/roofGeometry.ts, src/lib/overpass.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 81,
+          "title": "Test parseHeight priority order and unit stripping ('12 m', '3', missing)",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 82,
+          "title": "Add a roof-shape legend entry/tooltip explaining flat vs pitched coloring",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 83,
+          "title": "Document the flat-vs-pitched decision tree in ARCHITECTURE.md",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 84,
+          "title": "Add an integration test: warehouse -> flat -> single PVGIS -> finance is stable",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 85,
+          "title": "Add an integration test: gabled house -> two planes -> summed energy > single-plane south",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 86,
+          "title": "Validate roof tags at the boundary (ignore garbage like roof:shape=yes)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 87,
+          "title": "Add tilt/azimuth manual override controls in LocationDetails advanced section",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 88,
+          "title": "Recompute PVGIS + finance when user overrides tilt/azimuth",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 89,
+          "title": "Show a south-facing suitability badge (good/ok/poor) from azimuth deviation",
+          "files": "src/components/LocationDetails.tsx, src/lib/roofGeometry.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 90,
+          "title": "Use heightM to derive inter-row shading derate on flat tilted roofs (refine GCR)",
+          "files": "src/lib/packing.ts, src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 91,
+          "title": "Feed heightM into a self-shading note for very tall adjacent parapets",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "roof-geometry"
+        },
+        {
+          "n": 92,
+          "title": "Expose roofShape + azimuth in GeoJSON properties for future color-by-orientation layer",
+          "files": "src/lib/overpass.ts",
+          "category": "rendering"
+        },
+        {
+          "n": 93,
+          "title": "Add a color-by-azimuth debug mode (gradient by aspect) toggle for QA",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 94,
+          "title": "Add a unit test ensuring renderHeight is finite and >0 for all fixtures",
+          "files": "src/lib/roofGeometry.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 95,
+          "title": "Cache roof model + packing together so one recompute updates both",
+          "files": "src/lib/roofGeometry.ts, src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 96,
+          "title": "Add a 'multi-plane' indicator chip when a roof is split into >1 plane",
+          "files": "src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 97,
+          "title": "Handle relations/multipolygons with holes when projecting to ENU (exclude inner rings)",
+          "files": "src/lib/roofGeometry.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 98,
+          "title": "Add explainable text: 'Flat warehouse, S, 12deg tilt, GCR 0.5' summary string",
+          "files": "src/lib/roofGeometry.ts, src/components/LocationDetails.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 99,
+          "title": "Wire roof model summary string into the PDF report header",
+          "files": "src/lib/pdfReport.ts",
+          "category": "docs"
+        },
+        {
+          "n": 100,
+          "title": "Verify end-to-end: tags -> roof model -> per-plane pack -> per-plane PVGIS -> finance for flat and gabled samples",
+          "files": "src/lib/roofGeometry.ts, src/components/LocationDetails.tsx",
+          "category": "testing"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "theme": "PHASE C — Map Rendering Correctness",
+      "goal": "Make the map render flawlessly and stay correct under stress: deterministic layer ordering, collision-free feature ids, robust feature-state across setData and setStyle, flicker-free style switching, invalid-geometry guards, smooth performance at thousands of buildings, hover feedback, crisp outlines, and clean teardown.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Replace setStyle on basemap toggle with setStyle({transformStyle}) to preserve sources/layers and avoid flicker",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 2,
+          "title": "Use transformStyle to carry over buildings, draw, panels sources across OSM<->satellite switches",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 3,
+          "title": "Replace 31-bit hashId with a sequential integer id map (id<->buildingId) to eliminate collisions",
+          "files": "src/lib/overpass.ts",
+          "category": "rendering"
+        },
+        {
+          "n": 4,
+          "title": "Maintain a stable buildingId->numericId registry so feature-state survives across setData",
+          "files": "src/lib/overpass.ts, src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 5,
+          "title": "On setData, removeFeatureState for ids no longer present, then re-apply selected/multiselected",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 6,
+          "title": "Re-apply selected feature-state after every geojson setData effect",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 7,
+          "title": "Re-apply all multiselected feature-states after setData using selectionIds",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 8,
+          "title": "Define a fixed layer order array and add layers with beforeId to enforce z-order",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 9,
+          "title": "Ensure draw-fill/draw-line render ABOVE buildings (currently can be hidden behind)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 10,
+          "title": "Place panels-fill/panels-outline below draw layers but above buildings-fill",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 11,
+          "title": "Place selection-highlight outline as the topmost building layer for visibility",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 12,
+          "title": "Tune buildings geojson source: set buffer and maxzoom to reduce tile churn",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 13,
+          "title": "Color buildings purely via feature-state/get to avoid full setData on every lead edit",
+          "files": "src/components/MapView.tsx, src/lib/overpass.ts",
+          "category": "performance"
+        },
+        {
+          "n": 14,
+          "title": "Push lead status as feature-state instead of rebuilding GeoJSON when only color changes",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 15,
+          "title": "Add map.resize() when the map container transitions from display:none to visible (table<->map)",
+          "files": "src/components/MapView.tsx, src/App.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 16,
+          "title": "Add a ResizeObserver on the map container to call map.resize() on layout changes",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 17,
+          "title": "Add mousemove hover: query buildings-fill, set hovered feature-state, pointer cursor",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 18,
+          "title": "Add a hovered paint branch (subtle fill/outline emphasis) distinct from selected",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 19,
+          "title": "Clear hovered feature-state on mouseleave to avoid stuck highlights",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 20,
+          "title": "Wrap the draw-area turf calls (polygon/bbox/booleanPointInPolygon) in try/catch",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 21,
+          "title": "Validate drawn polygon with turf.kinks before fetching (reject self-intersecting)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 22,
+          "title": "Simplify very large drawn polygons before point-in-polygon filtering",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 23,
+          "title": "Enable antialias:true at Map construction for crisp outlines and extrusion edges",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 24,
+          "title": "Cap devicePixelRatio (maxPixelRatio) to keep large-canvas perf reasonable on hi-DPI",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 25,
+          "title": "Self-host or drop the demotiles glyphs URL; provide local font stack for labels",
+          "files": "src/components/MapView.tsx, public/ (new)",
+          "category": "rendering"
+        },
+        {
+          "n": 26,
+          "title": "Null the mapInstance singleton on unmount (setMapInstance(null)) to prevent stale refs",
+          "files": "src/components/MapView.tsx, src/lib/mapInstance.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 27,
+          "title": "Add an abort flag so async draw-area fetch results are ignored after unmount",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 28,
+          "title": "Guard every getSource(...).setData call with existence + try/catch (style-change race)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 29,
+          "title": "Validate geometry in buildingsToGeoJSON: skip non Polygon/MultiPolygon types",
+          "files": "src/lib/overpass.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 30,
+          "title": "Validate ring closure / minimum positions before emitting a feature",
+          "files": "src/lib/overpass.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 31,
+          "title": "Log and count dropped invalid geometries; surface 'N skipped' to the user",
+          "files": "src/lib/overpass.ts, src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 32,
+          "title": "Re-add DRAW_SOURCE in the styledata guard (currently only buildings is re-added)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 33,
+          "title": "Re-add panels source/layers in the styledata guard so satellite toggle keeps them",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 34,
+          "title": "Clear selectedIdRef + selectBuilding(null) before setStyle to avoid orphaned selection",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 35,
+          "title": "Re-apply selection after styledata if it should persist across basemap toggle",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 36,
+          "title": "Defer queryRenderedFeatures in click handler to next frame to avoid stale results mid-animation",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 37,
+          "title": "Add an Error Boundary around MapView with a recovery 'reload map' button",
+          "files": "src/components/MapErrorBoundary.tsx (new), src/App.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 38,
+          "title": "Add defensive CSS: map-container min-height/min-width to survive flex layout breakage",
+          "files": "src/index.css, src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 39,
+          "title": "Validate feature.id is defined and source exists before any setFeatureState",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 40,
+          "title": "Wrap multiselect setFeatureState in try/catch to tolerate removed features",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 41,
+          "title": "Auto fitBounds to newly loaded buildings (draw-area or Get Rooftops) with padding",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 42,
+          "title": "Use fitBounds(buildingBbox) instead of easeTo(centroid) when panning to selection",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 43,
+          "title": "Add a subtle paint transition (fill-opacity) so selection change reads as responsive",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 44,
+          "title": "Debounce rapid repeated map clicks to avoid double-query thrash",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 45,
+          "title": "Memoize geojson build by content hash so identical data does not re-trigger setData",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 46,
+          "title": "Confirm useFilteredBuildings/leads memo deps are complete; comment why they suffice",
+          "files": "src/hooks/useFilteredBuildings.ts, src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 47,
+          "title": "Split buildings paint into selected/multiselected/normal layers toggled by feature-state filter to cut per-feature expression cost",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 48,
+          "title": "Add minzoom thresholds so outline width simplifies at low zoom for perf",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 49,
+          "title": "Add a loading skeleton/spinner overlay until the first styledata event",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 50,
+          "title": "Show a basemap-capability badge: 'Satélite' vs 'Só ruas (sem chave)'",
+          "files": "src/components/MapView.tsx, src/config.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 51,
+          "title": "Add explicit attribution text for OSM + MapTiler in an info affordance",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 52,
+          "title": "Make the legend responsive: collapse/hide below 640px to avoid overlap",
+          "files": "src/components/MapView.tsx, src/index.css",
+          "category": "map-ux"
+        },
+        {
+          "n": 53,
+          "title": "Normalize z-index usage (z-10/z-20/z-30) for overlays to prevent stacking conflicts",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 54,
+          "title": "Show crosshair/cell cursor when Shift/Ctrl held to advertise multi-select",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 55,
+          "title": "Add inline hint 'Shift+click = multi-seleção' near cursor during multi-select",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 56,
+          "title": "Backspace removes the last drawn polygon point; show live point count",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 57,
+          "title": "Toast on draw cancel (ESC) with the count of abandoned points",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 58,
+          "title": "Report dropped relations with no outer members to the user (not silent)",
+          "files": "src/lib/overpass.ts, src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 59,
+          "title": "Persist 3D/pitch/satellite view state in pye:mapview localStorage alongside center/zoom",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 60,
+          "title": "Guard localStorage parsing of pye:mapview against new fields (backward compat)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 61,
+          "title": "Throttle moveend localStorage writes (already 500ms) and skip writes during animation",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 62,
+          "title": "Add a maxBounds to keep prospecting within Portugal and avoid accidental world pans",
+          "files": "src/components/MapView.tsx, src/config.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 63,
+          "title": "Add NavigationControl with visualizePitch:true once 3D is introduced (Phase D dependency)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 64,
+          "title": "Add unit tests for the buildingId<->numericId registry (no collisions, stable mapping)",
+          "files": "src/lib/overpass.test.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 65,
+          "title": "Add unit test: buildingsToGeoJSON skips Point/LineString geometries",
+          "files": "src/lib/overpass.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 66,
+          "title": "Add unit test: buildingsToGeoJSON closes/validates rings",
+          "files": "src/lib/overpass.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 67,
+          "title": "Add unit test: dropped-geometry counter increments for malformed input",
+          "files": "src/lib/overpass.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 68,
+          "title": "Add a Playwright e2e: basemap toggle keeps buildings + selection (no flicker/drop)",
+          "files": "e2e/basemap-toggle.spec.ts (new), package.json",
+          "category": "testing"
+        },
+        {
+          "n": 69,
+          "title": "Add a Playwright e2e: draw polygon -> buildings load -> fitBounds",
+          "files": "e2e/draw-area.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 70,
+          "title": "Add a Playwright e2e: select building keeps highlight across table<->map switch",
+          "files": "e2e/selection-persist.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 71,
+          "title": "Profile render with 5000 features and record FPS baseline before/after layer-split",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 72,
+          "title": "Add a feature-count guard that warns when rendering exceeds a perf threshold",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 73,
+          "title": "Ensure remove of all event listeners (click/dblclick/move/mousemove) on unmount",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 74,
+          "title": "Ensure ResizeObserver + keydown listeners are disconnected on unmount",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 75,
+          "title": "Cancel in-flight MapTiler style fetch on unmount (AbortController)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 76,
+          "title": "Add a basemap selector (OSM / CartoDB / satellite) in BottomToolbar with persisted choice",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 77,
+          "title": "Verify MapTiler attribution is included when satellite style is active",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 78,
+          "title": "Add a 'reset view' control to recenter to default center/zoom",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 79,
+          "title": "Ensure draw layers re-render above any newly added 3D/panels layers (order audit)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 80,
+          "title": "Add a sanity assertion in dev: all expected layers exist after styledata",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 81,
+          "title": "Handle offline state during draw: detect navigator.onLine and show a clear message",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 82,
+          "title": "Retry/backoff messaging when all Overpass mirrors fail during draw-area",
+          "files": "src/lib/overpass.ts, src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 83,
+          "title": "Avoid rebuilding the entire source when toggling a single lead's flagged state",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 84,
+          "title": "Batch multiple lead updates into a single setData/feature-state pass per frame",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 85,
+          "title": "Add a paint expression unit/snapshot test for the buildings fill 'case' branches",
+          "files": "src/components/MapView.test.tsx (new)",
+          "category": "testing"
+        },
+        {
+          "n": 86,
+          "title": "Ensure outline line-width interpolates with zoom for crispness across scales",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 87,
+          "title": "Add fade-in for newly loaded buildings to avoid abrupt popping",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 88,
+          "title": "Prevent double-add of layers if styledata fires multiple times rapidly",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 89,
+          "title": "Centralize source/layer ids as constants to avoid string drift",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 90,
+          "title": "Extract addAppLayers into src/components/map/layers.ts to shrink MapView (<800 lines)",
+          "files": "src/components/map/layers.ts (new), src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 91,
+          "title": "Extract draw helpers (updateDrawLayer/clearDraw) into src/components/map/draw.ts",
+          "files": "src/components/map/draw.ts (new), src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 92,
+          "title": "Extract hover logic into a useMapHover hook for testability",
+          "files": "src/hooks/useMapHover.ts (new), src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 93,
+          "title": "Add a dev-only overlay showing current feature count + FPS for perf QA",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 94,
+          "title": "Ensure feature-state for hover does not leak into selected styling priority",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 95,
+          "title": "Add keyboard accessibility: Escape clears selection, not only draw mode",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 96,
+          "title": "Guard pan-to-selected against missing building (already filtered) and finite coords",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 97,
+          "title": "Add a test ensuring setStyle transformStyle preserves the buildings source",
+          "files": "src/components/MapView.test.tsx",
+          "category": "testing"
+        },
+        {
+          "n": 98,
+          "title": "Document the rendering invariants (layer order, feature-state lifecycle) in ARCHITECTURE.md",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 99,
+          "title": "Add CI script entries (lint + vitest + playwright) to package.json",
+          "files": "package.json",
+          "category": "testing"
+        },
+        {
+          "n": 100,
+          "title": "Manual verification pass: switch basemap, draw, select, multi-select, resize, 5k features — no flicker/leaks",
+          "files": "src/components/MapView.tsx",
+          "category": "testing"
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "theme": "PHASE D — 3D",
+      "goal": "Add native MapLibre 3D: extrude building footprints by real renderHeight, a smooth 2D<->3D camera toggle (pitch/bearing), a sky/horizon, packed panels rendered as a thin 3D slab on the selected roof, and camera controls — all performant, no deck.gl, surviving setStyle.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Emit numeric renderHeight per feature in buildingsToGeoJSON (height -> levels*3.2 -> use default)",
+          "files": "src/lib/overpass.ts",
+          "category": "3d"
+        },
+        {
+          "n": 2,
+          "title": "Implement parseHeight(tags, use) helper computed once at GeoJSON build time",
+          "files": "src/lib/overpass.ts, src/lib/roofGeometry.ts",
+          "category": "3d"
+        },
+        {
+          "n": 3,
+          "title": "Default warehouse/industrial flat-roof height to ~8m, retail ~6m when untagged",
+          "files": "src/lib/overpass.ts",
+          "category": "3d"
+        },
+        {
+          "n": 4,
+          "title": "Keep fill-extrusion-base at 0 (ground-level buildings, not floating floors)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 5,
+          "title": "Add a buildings-3d fill-extrusion layer bound to the same buildings source",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 6,
+          "title": "Copy selection color logic into fill-extrusion-color (cyan selected, amber multiselected, else fillColor)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 7,
+          "title": "Use fill-extrusion-height = get renderHeight via a zoom interpolation (0 at z15 -> full at z16)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 8,
+          "title": "Set buildings-3d minzoom:15 so extrusions only build geometry when zoomed in",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 9,
+          "title": "Set fill-extrusion-vertical-gradient:true for natural shaded sides",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 10,
+          "title": "Set fill-extrusion-opacity ~0.85 (per-layer; document it cannot vary per feature)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 11,
+          "title": "Start buildings-3d with layout.visibility 'none' (toggled on in 3D mode)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 12,
+          "title": "Add 'buildings-3d' to the click layers array so selection works on extrusions too",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 13,
+          "title": "Add a 3D toggle button to BottomToolbar next to Layers/Fullscreen",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 14,
+          "title": "enable3D(): setMaxPitch(70), show buildings-3d, hide buildings-fill, easeTo pitch 55 bearing -20",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 15,
+          "title": "disable3D(): easeTo pitch 0 bearing 0, hide buildings-3d, show buildings-fill",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 16,
+          "title": "Use easeTo (~700ms) for the 2D<->3D transition, never jumpTo",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 17,
+          "title": "Keep bearing modest (-20deg) so rooftops stay readable",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 18,
+          "title": "Set antialias:true at Map construction (cannot be enabled later) for clean extrusion edges",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 19,
+          "title": "Set maxPitch:70 in Map constructor options",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 20,
+          "title": "Persist 3D on/off + pitch + bearing in pye:mapview localStorage",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 21,
+          "title": "Restore 3D mode + camera from localStorage on map init",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 22,
+          "title": "Store is3DEnabled in a ref so the styledata handler can re-assert it",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 23,
+          "title": "In styledata guard, after re-adding layers, re-apply 3D visibility (show 3d / hide fill)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 24,
+          "title": "Verify camera pitch survives setStyle (camera is style-independent) — no re-easeTo needed",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 25,
+          "title": "Switch NavigationControl to visualizePitch:true so users can drag pitch/bearing",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 26,
+          "title": "Enable right-drag / ctrl-drag rotate + pitch interactions (DragRotateHandler defaults)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 27,
+          "title": "Add a 'reset north / level' button to snap bearing 0 / pitch 0",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 28,
+          "title": "Add map.setSky({}) for a cheap atmosphere/horizon at high pitch",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 29,
+          "title": "Re-apply setSky after setStyle (sky is style-scoped) in the styledata guard",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 30,
+          "title": "Tune sky colors to match the dark UI theme for visual cohesion",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 31,
+          "title": "Skip terrain for the initial 3D feature (flat industrial estates gain little, cost tiles)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 32,
+          "title": "Document the no-key DEM options (demotiles, mapterhorn) for optional future terrain",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 33,
+          "title": "Avoid AWS Terrarium terrain tiles (encoding + cost caveats) in any future terrain work",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 34,
+          "title": "Generate packed-panel rectangles for the selected building (reuse Phase A packing)",
+          "files": "src/lib/packing.ts, src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 35,
+          "title": "Add roofHeight property to each panel feature = building renderHeight",
+          "files": "src/lib/packing.ts",
+          "category": "3d"
+        },
+        {
+          "n": 36,
+          "title": "Add a panels-3d fill-extrusion layer on a dedicated panels source",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 37,
+          "title": "Set panels-3d base = get roofHeight, height = roofHeight + 0.15m (thin slab, avoids z-fight)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 38,
+          "title": "Color panels-3d dark blue (#1e3a8a), opacity 1.0",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 39,
+          "title": "Compute + render panels-3d ONLY for the selected building (50-400 rects), never all",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 40,
+          "title": "Clear panels source (setData empty) when selection changes or clears",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 41,
+          "title": "Re-add panels source + panels-3d layer in the styledata guard",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 42,
+          "title": "Show panels-3d only when 3D mode is on (sync visibility with the toggle)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 43,
+          "title": "Assume flat-roof panels lie horizontal at roof height (matches C&I warehouses)",
+          "files": "src/lib/packing.ts",
+          "category": "3d"
+        },
+        {
+          "n": 44,
+          "title": "Document tilted-rack 3D as out of scope (would need custom layers/three.js)",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 45,
+          "title": "Gate panels-3d behind a high zoom (>=17) to limit extrusion load",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 46,
+          "title": "Keep buildings-3d opacity high; drop vertical-gradient to false if FPS dips at scale",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 47,
+          "title": "Document expected satellite-floats-above-imagery behavior (2D raster vs 3D box)",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 48,
+          "title": "Avoid two extrusion layers with identical height ranges over the same polygons (z-fight)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 49,
+          "title": "Do NOT add deck.gl: native fill-extrusion covers extrusion + tilt + panel slab + selection",
+          "files": "package.json",
+          "category": "3d"
+        },
+        {
+          "n": 50,
+          "title": "Record the deck.gl decision + revisit criteria (tilted-array, sun-path shadows) in docs",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 51,
+          "title": "Add a height-source indicator on hover/tooltip (tag vs levels vs default)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 52,
+          "title": "Add a height legend/scale hint so extrusion heights are interpretable",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 53,
+          "title": "Animate extrusion grow-in via the zoom interpolation rather than abrupt appearance",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 54,
+          "title": "Ensure queryRenderedFeatures click includes both buildings-fill and buildings-3d",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 55,
+          "title": "Keep selection feature-state shared between 2D and 3D building layers",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 56,
+          "title": "Hover highlight should also work on buildings-3d (extend hover query layers)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 57,
+          "title": "Add a pitch slider (0-70) for fine 3D control beyond the on/off toggle",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 58,
+          "title": "Clamp pitch slider to maxPitch and reset cleanly when leaving 3D",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 59,
+          "title": "Add a bearing compass that reflects/sets current rotation",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 60,
+          "title": "Persist last pitch slider value so it restores with the view",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 61,
+          "title": "Add a keyboard shortcut to toggle 3D (and document in ShortcutsHelp)",
+          "files": "src/components/MapView.tsx, src/components/ShortcutsHelp.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 62,
+          "title": "Disable 3D toggle gracefully if WebGL extrusion is unsupported (feature-detect)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 63,
+          "title": "Guard renderHeight to a sane min (e.g. 2m) so degenerate heights still extrude visibly",
+          "files": "src/lib/overpass.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 64,
+          "title": "Validate renderHeight is finite/positive in buildingsToGeoJSON (fallback to default)",
+          "files": "src/lib/overpass.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 65,
+          "title": "Add unit test for parseHeight precedence and unit stripping",
+          "files": "src/lib/overpass.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 66,
+          "title": "Add unit test: every fixture feature has finite renderHeight > 0",
+          "files": "src/lib/overpass.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 67,
+          "title": "Add unit test: panel features carry roofHeight equal to building renderHeight",
+          "files": "src/lib/packing.test.ts",
+          "category": "testing"
+        },
+        {
+          "n": 68,
+          "title": "Add Playwright e2e: toggle 3D shows extrusions + sky, toggle off restores 2D",
+          "files": "e2e/three-d-toggle.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 69,
+          "title": "Add Playwright e2e: 3D mode survives satellite toggle (extrusions persist)",
+          "files": "e2e/three-d-setstyle.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 70,
+          "title": "Add Playwright e2e: selecting a building in 3D draws the panel slab",
+          "files": "e2e/panels-3d.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 71,
+          "title": "Profile FPS with thousands of buildings in 3D at z16 and record baseline",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 72,
+          "title": "If FPS dips, lower buildings-3d render scope (minzoom up / disable gradient)",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 73,
+          "title": "Ensure 2D mode pays nothing: buildings-3d stays visibility none by default",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 74,
+          "title": "Memoize panel-slab geojson so re-selecting the same building does not recompute",
+          "files": "src/components/MapView.tsx, src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 75,
+          "title": "Avoid recomputing packing on every pitch change (decouple camera from data)",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 76,
+          "title": "Add a subtle ambient color tweak so extruded sides read against satellite",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 77,
+          "title": "Ensure draw polygon still renders correctly while in 3D (flat draw at ground)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 78,
+          "title": "Confirm draw layers sit above 3D buildings (order audit in 3D mode)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 79,
+          "title": "Extract 3D helpers (enable3D/disable3D/sky/panels) into src/components/map/threeD.ts",
+          "files": "src/components/map/threeD.ts (new), src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 80,
+          "title": "Add 3D state to the appStore so other UI can reflect it",
+          "files": "src/store/appStore.ts, src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 81,
+          "title": "Add a tooltip explaining what the panel slab represents (packed module footprint)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 82,
+          "title": "Color the panel slab by orientation/plane for gabled roofs (per-plane color)",
+          "files": "src/components/MapView.tsx, src/lib/packing.ts",
+          "category": "3d"
+        },
+        {
+          "n": 83,
+          "title": "Add a height-exaggeration toggle for tall-vs-flat differentiation (optional)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 84,
+          "title": "Ensure the 3D extrusion respects feature-state hover (subtle emphasis)",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 85,
+          "title": "Guard easeTo calls when map is mid-animation to avoid jank (queue/cancel)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 86,
+          "title": "Recompute panel slab roofHeight when roof model height changes (Phase B link)",
+          "files": "src/components/MapView.tsx, src/lib/roofGeometry.ts",
+          "category": "3d"
+        },
+        {
+          "n": 87,
+          "title": "Add a 'fit to building in 3D' action that frames the selected roof at a good pitch",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 88,
+          "title": "Make the 3D toggle reflect persisted state on next launch (button active styling)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 89,
+          "title": "Ensure sky is removed/added cleanly so 2D mode has no leftover atmosphere artifacts",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 90,
+          "title": "Add a low-end fallback: cap maxPitch lower if GPU is weak (perf heuristic)",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 91,
+          "title": "Document the full 3D feature (extrusion, toggle, sky, panel slab) in ARCHITECTURE.md",
+          "files": "docs/ARCHITECTURE.md",
+          "category": "docs"
+        },
+        {
+          "n": 92,
+          "title": "Add a screenshot/export that captures the 3D view (reuse fullscreen/canvas)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 93,
+          "title": "Verify panel slab z-offset eliminates flicker on the selected roof",
+          "files": "src/components/MapView.tsx",
+          "category": "3d"
+        },
+        {
+          "n": 94,
+          "title": "Add a unit/snapshot test for the buildings-3d paint expression branches",
+          "files": "src/components/MapView.test.tsx",
+          "category": "testing"
+        },
+        {
+          "n": 95,
+          "title": "Add a dev overlay showing current pitch/bearing/zoom for 3D QA",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 96,
+          "title": "Ensure 3D layers are torn down with map.remove on unmount (no leaks)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 97,
+          "title": "Add ShortcutsHelp entries for 3D toggle, reset view, pitch controls",
+          "files": "src/components/ShortcutsHelp.tsx",
+          "category": "docs"
+        },
+        {
+          "n": 98,
+          "title": "Confirm renderHeight reuse between buildings-3d and panel roofHeight is consistent",
+          "files": "src/lib/overpass.ts, src/lib/packing.ts",
+          "category": "3d"
+        },
+        {
+          "n": 99,
+          "title": "Add a fallback when renderHeight is missing (extrude to default, never 0)",
+          "files": "src/components/MapView.tsx, src/lib/overpass.ts",
+          "category": "robustness"
+        },
+        {
+          "n": 100,
+          "title": "Manual verification: extrude, tilt, rotate, select roof slab, satellite toggle, restore view — all stable",
+          "files": "src/components/MapView.tsx",
+          "category": "testing"
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "theme": "PHASE E — Map UX for Prospecting",
+      "goal": "Turn the map into a true prospecting cockpit: per-building kWp labels with decluttering, hover tooltip, panel-layout toggle, roof-orientation arrow, measurement tools, a layers panel, clustering at low zoom, a richer legend, and scale/minimap — so a prospector can read system size, orientation and viability at a glance without opening a panel.",
+      "improvements": [
+        {
+          "n": 1,
+          "title": "Add estimatedKwp (packed or estimate) to feature properties in buildingsToGeoJSON for labels",
+          "files": "src/lib/overpass.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 2,
+          "title": "Add a buildings-label symbol layer anchored at centroid showing rounded kWp",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 3,
+          "title": "Use text-size zoom expression: hide labels below z15, scale up at z16+",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 4,
+          "title": "Format label as e.g. '412 kWp' with a compact number formatter",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 5,
+          "title": "Set text-ignore-placement:false + text-optional:true so overlapping labels declutter",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 6,
+          "title": "Add text-halo for readability over satellite imagery",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 7,
+          "title": "Re-add the label layer + glyphs in the styledata guard",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 8,
+          "title": "Self-host glyphs (Phase C) so labels work without the demotiles CDN",
+          "files": "src/components/MapView.tsx, public/ (new)",
+          "category": "rendering"
+        },
+        {
+          "n": 9,
+          "title": "Add an optional 'show kWp on all buildings' vs 'selected only' label mode",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 10,
+          "title": "Always show the label for the selected building regardless of declutter",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 11,
+          "title": "Build a hover tooltip component anchored near the cursor",
+          "files": "src/components/MapTooltip.tsx (new), src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 12,
+          "title": "Populate tooltip with name/operator, area m^2, kWp, roof type, score",
+          "files": "src/components/MapTooltip.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 13,
+          "title": "Drive tooltip from the hover feature-state/mousemove query (Phase C hover)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 14,
+          "title": "Throttle tooltip updates (rAF) to avoid layout thrash on fast mouse moves",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 15,
+          "title": "Hide tooltip on mouseleave and during draw mode",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 16,
+          "title": "Add a panel-layout toggle button that draws packed panels for the selected building",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 17,
+          "title": "Persist panel-layout-visible preference in localStorage",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 18,
+          "title": "Show module count + kWp inline when panel layout is shown",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 19,
+          "title": "Add a roof-orientation arrow symbol layer using stored azimuth/theta",
+          "files": "src/components/MapView.tsx, src/lib/roofGeometry.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 20,
+          "title": "Rotate the arrow icon by azimuth via icon-rotate from a feature property",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 21,
+          "title": "Show the arrow only at high zoom / for the selected building to avoid clutter",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 22,
+          "title": "Add an arrow legend entry explaining it points downslope / to azimuth",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 23,
+          "title": "Add a measurement tool: click points to measure distance with live readout",
+          "files": "src/components/MapView.tsx, src/components/map/measure.ts (new)",
+          "category": "map-ux"
+        },
+        {
+          "n": 24,
+          "title": "Add area measurement: draw a temp polygon, show area + perimeter live",
+          "files": "src/components/map/measure.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 25,
+          "title": "Use turf.length / turf.area for measurement and format in m / m^2 / ha",
+          "files": "src/components/map/measure.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 26,
+          "title": "Add a dedicated measure source/layer (dashed line + vertices) separate from draw",
+          "files": "src/components/MapView.tsx, src/components/map/measure.ts",
+          "category": "rendering"
+        },
+        {
+          "n": 27,
+          "title": "Clear measurement on ESC and on tool toggle off",
+          "files": "src/components/map/measure.ts, src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 28,
+          "title": "Build a Layers panel component listing toggleable overlays",
+          "files": "src/components/LayersPanel.tsx (new), src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 29,
+          "title": "Layers panel toggles: kWp labels, panel layout, orientation arrows, 3D, clusters",
+          "files": "src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 30,
+          "title": "Layers panel basemap selector (OSM / CartoDB / satellite) with persistence",
+          "files": "src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 31,
+          "title": "Wire the existing Layers toolbar button to open the Layers panel",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 32,
+          "title": "Persist all layer toggles in localStorage and restore on load",
+          "files": "src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 33,
+          "title": "Make the Layers panel responsive/collapsible on small viewports",
+          "files": "src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 34,
+          "title": "Add a clustered geojson source variant for low zoom (cluster:true)",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 35,
+          "title": "Render cluster circles sized/colored by point_count below z13",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 36,
+          "title": "Add a cluster-count symbol layer (number inside the circle)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 37,
+          "title": "Expand cluster on click (getClusterExpansionZoom + easeTo)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 38,
+          "title": "Render individual building polygons only at z13+ (switch from clusters)",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 39,
+          "title": "Decide clustering vs polygons cleanly (clusters need a point source; keep both sources in sync)",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 40,
+          "title": "Build a centroid point FeatureCollection for clustering from buildings",
+          "files": "src/lib/overpass.ts, src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 41,
+          "title": "Aggregate total kWp per cluster (clusterProperties sum of estimatedKwp)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 42,
+          "title": "Show aggregated cluster kWp in the cluster label (e.g. '12 · 4.1 MWp')",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 43,
+          "title": "Color clusters by average lead score / status mix for triage",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 44,
+          "title": "Re-add cluster source/layers in the styledata guard",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 45,
+          "title": "Expand the legend to a richer, collapsible panel (status + overlays)",
+          "files": "src/components/MapLegend.tsx (new), src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 46,
+          "title": "Add legend entries for kWp label, panel layout, orientation arrow, clusters",
+          "files": "src/components/MapLegend.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 47,
+          "title": "Make the legend responsive: collapse below 640px (Phase C alignment)",
+          "files": "src/components/MapLegend.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 48,
+          "title": "Add a ScaleControl (metric) to the map",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 49,
+          "title": "Add a minimap/overview inset showing current viewport in regional context",
+          "files": "src/components/MapMinimap.tsx (new), src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 50,
+          "title": "Sync the minimap viewport rectangle with the main map move events",
+          "files": "src/components/MapMinimap.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 51,
+          "title": "Allow click on minimap to recenter the main map",
+          "files": "src/components/MapMinimap.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 52,
+          "title": "Add a color-by mode selector: status / score / kWp / roof type",
+          "files": "src/components/LayersPanel.tsx, src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 53,
+          "title": "Implement color-by-kWp gradient paint expression (low->high)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 54,
+          "title": "Implement color-by-score gradient (cold grey -> hot green)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 55,
+          "title": "Update the legend dynamically to match the active color-by mode",
+          "files": "src/components/MapLegend.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 56,
+          "title": "Add a kWp range slider filter directly on the map (quick triage)",
+          "files": "src/components/MapView.tsx, src/components/SearchFilter.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 57,
+          "title": "Show count of buildings matching the on-map kWp filter",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 58,
+          "title": "Add a quick 'top N by kWp' highlight overlay",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 59,
+          "title": "Add a 'fit to filtered buildings' button (fitBounds of visible set)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 60,
+          "title": "Add a per-building popup (click) showing kWp, energy, payback, score, contact",
+          "files": "src/components/MapPopup.tsx (new), src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 61,
+          "title": "Popup CTA buttons: open details, mark contacted, flag",
+          "files": "src/components/MapPopup.tsx, src/store/appStore.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 62,
+          "title": "Ensure popup repositions on map move and closes on deselect",
+          "files": "src/components/MapPopup.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 63,
+          "title": "Add a hover label preview of kWp even when global labels are off",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 64,
+          "title": "Add a measurement results readout box (distance/area) pinned to a corner",
+          "files": "src/components/map/measure.ts, src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 65,
+          "title": "Snap measurement vertices to building corners when near (turf nearestPoint)",
+          "files": "src/components/map/measure.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 66,
+          "title": "Add keyboard shortcuts for measure tool + layers panel (ShortcutsHelp)",
+          "files": "src/components/MapView.tsx, src/components/ShortcutsHelp.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 67,
+          "title": "Show roof-orientation arrows for all visible buildings at very high zoom (optional toggle)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 68,
+          "title": "Add a 'south-facing roofs' quick filter that dims poorly-oriented roofs",
+          "files": "src/components/MapView.tsx, src/lib/roofGeometry.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 69,
+          "title": "Add total visible kWp + count summary chip on the map",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 70,
+          "title": "Add total visible estimated annual savings chip (sum from finance)",
+          "files": "src/components/MapView.tsx, src/lib/solarFinance.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 71,
+          "title": "Add a 'panel layout for all visible' batch preview at high zoom (perf-guarded)",
+          "files": "src/components/MapView.tsx, src/lib/packing.ts",
+          "category": "performance"
+        },
+        {
+          "n": 72,
+          "title": "Guard batch panel preview by zoom + max feature count to protect FPS",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 73,
+          "title": "Add an info modal crediting OSM + MapTiler + PVGIS data sources",
+          "files": "src/components/MapView.tsx, src/components/SettingsModal.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 74,
+          "title": "Add a loading skeleton/grid until first styledata (Phase C alignment)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 75,
+          "title": "Add a basemap-capability badge ('Satélite' vs 'Só ruas')",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 76,
+          "title": "Add a 'reset all overlays' button in the Layers panel",
+          "files": "src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 77,
+          "title": "Add a compact mode for the map toolbar on small screens",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 78,
+          "title": "Add a tooltip explaining the score color in the legend",
+          "files": "src/components/MapLegend.tsx, src/lib/leadScore.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 79,
+          "title": "Add a 'measure to building' helper showing distance from cursor to nearest roof",
+          "files": "src/components/map/measure.ts",
+          "category": "map-ux"
+        },
+        {
+          "n": 80,
+          "title": "Show kWp labels with adaptive precision (kWp under 1000, MWp above)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 81,
+          "title": "Add an export-current-view button (PNG) for sharing prospecting maps",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 82,
+          "title": "Persist color-by mode and labels mode in localStorage",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 83,
+          "title": "Add a clusters-on toggle with sensible default off above z13",
+          "files": "src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 84,
+          "title": "Add hover highlight on clusters with pointer cursor",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 85,
+          "title": "Ensure tooltip + popup do not both show simultaneously (mutual exclusion)",
+          "files": "src/components/MapView.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 86,
+          "title": "Add a unit test for the kWp label formatter (kWp/MWp thresholds)",
+          "files": "src/lib/format.test.ts (new), src/lib/format.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 87,
+          "title": "Extract number/kWp/area formatters into src/lib/format.ts (reuse across map + table)",
+          "files": "src/lib/format.ts (new), src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 88,
+          "title": "Add a Playwright e2e: hover building shows tooltip with kWp",
+          "files": "e2e/hover-tooltip.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 89,
+          "title": "Add a Playwright e2e: toggle panel layout draws panels for selection",
+          "files": "e2e/panel-toggle.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 90,
+          "title": "Add a Playwright e2e: clusters appear at low zoom and expand on click",
+          "files": "e2e/clusters.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 91,
+          "title": "Add a Playwright e2e: measurement tool reports plausible distance",
+          "files": "e2e/measure.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 92,
+          "title": "Add a Playwright e2e: kWp labels declutter (no overlap) at z14",
+          "files": "e2e/labels-declutter.spec.ts (new)",
+          "category": "testing"
+        },
+        {
+          "n": 93,
+          "title": "Ensure all new overlays re-add after setStyle (styledata audit for labels/arrows/clusters/measure)",
+          "files": "src/components/MapView.tsx",
+          "category": "rendering"
+        },
+        {
+          "n": 94,
+          "title": "Ensure all new sources/layers torn down on unmount (no leaks)",
+          "files": "src/components/MapView.tsx",
+          "category": "robustness"
+        },
+        {
+          "n": 95,
+          "title": "Document the prospecting cockpit UX (overlays, toggles, shortcuts) in docs",
+          "files": "docs/ARCHITECTURE.md, src/components/ShortcutsHelp.tsx",
+          "category": "docs"
+        },
+        {
+          "n": 96,
+          "title": "Add ShortcutsHelp entries for all new map tools (measure, layers, labels, orientation)",
+          "files": "src/components/ShortcutsHelp.tsx",
+          "category": "docs"
+        },
+        {
+          "n": 97,
+          "title": "Accessibility pass: ARIA labels + keyboard focus for map toolbar/panel buttons",
+          "files": "src/components/MapView.tsx, src/components/LayersPanel.tsx",
+          "category": "map-ux"
+        },
+        {
+          "n": 98,
+          "title": "Mobile pass: ensure tooltip/popup/legend/panel do not overlap on <640px",
+          "files": "src/components/MapView.tsx, src/index.css",
+          "category": "map-ux"
+        },
+        {
+          "n": 99,
+          "title": "Performance pass: clustering + labels + arrows at thousands of buildings stays smooth",
+          "files": "src/components/MapView.tsx",
+          "category": "performance"
+        },
+        {
+          "n": 100,
+          "title": "Manual verification: label, hover, panel toggle, arrow, measure, layers panel, clusters, legend, scale, minimap all work together",
+          "files": "src/components/MapView.tsx",
+          "category": "testing"
+        }
+      ]
+    }
+  ]
+}
