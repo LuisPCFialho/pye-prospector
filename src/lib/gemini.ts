@@ -1,4 +1,9 @@
 import type { BuildingFeature, Lead } from "../types/building";
+import { createRateLimiter } from "./fetchUtils";
+
+// Throttle Gemini to ~13 req/min (under the 15 RPM free-tier limit) so bursts
+// of company lookups don't trip 429 quota errors.
+const geminiLimiter = createRateLimiter(4500);
 
 /** Resolve the Gemini key: user override in localStorage wins over the build-time env. */
 function geminiKey(): string {
@@ -71,7 +76,7 @@ Procura no Google Maps e em registos de empresas portuguesas. Devolve APENAS um 
       const timer = setTimeout(() => ctrl.abort(), 15_000);
       let res: Response;
       try {
-        res = await fetch(url, {
+        res = await geminiLimiter(() => fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
           body: JSON.stringify({
@@ -80,7 +85,7 @@ Procura no Google Maps e em registos de empresas portuguesas. Devolve APENAS um 
             generationConfig: { temperature: 0, maxOutputTokens: 400 },
           }),
           signal: ctrl.signal,
-        });
+        }));
       } finally {
         clearTimeout(timer);
       }
@@ -153,7 +158,7 @@ async function callGemini(req: AIRequest): Promise<string> {
       const timer = setTimeout(() => ctrl.abort(), 20_000);
       let res: Response;
       try {
-        res = await fetch(url, {
+        res = await geminiLimiter(() => fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
           body: JSON.stringify({
@@ -161,7 +166,7 @@ async function callGemini(req: AIRequest): Promise<string> {
             generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
           }),
           signal: ctrl.signal,
-        });
+        }));
       } finally {
         clearTimeout(timer);
       }

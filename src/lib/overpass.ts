@@ -2,6 +2,12 @@ import * as turf from "@turf/turf";
 import type { BuildingFeature, Lead, BuildingUse } from "../types/building";
 import { buildingFillColor } from "../types/building";
 import { estimateHeight } from "./roofGeometry";
+import { createRateLimiter } from "./fetchUtils";
+
+// Serialize Overpass requests with a 1s minimum gap — public mirrors throttle
+// or block bursts. Tiles are already fetched sequentially; this also guards
+// against rapid re-clicks of "Get Rooftops".
+const overpassLimiter = createRateLimiter(1000);
 
 export interface BBox {
   minLon: number; minLat: number; maxLon: number; maxLat: number;
@@ -77,14 +83,16 @@ out geom tags;`;
 }
 
 async function tryMirror(url: string, query: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(query)}`,
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timer));
+  return overpassLimiter(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+  });
 }
 
 function closeRing(g: OverpassGeom[]): [number, number][] {
