@@ -71,13 +71,25 @@ export function pickAddress(b: BuildingFeature): string | undefined {
   return parts.length > 0 ? parts.join(", ") : undefined;
 }
 
-/** Returns true if OSM declares solar PV on this building. */
+/**
+ * Returns true if OSM explicitly tags solar PV on this building.
+ * Extended to cover the full range of OSM solar tagging conventions used
+ * in Portugal so common installations aren't silently missed.
+ */
 export function hasSolarOnOSM(b: BuildingFeature): boolean {
   const t = b.rawTags ?? {};
-  return (
+  return !!(
     t["generator:source"] === "solar" ||
     t["roof:material"] === "solar_panels" ||
-    t["power"] === "generator" && t["generator:method"] === "photovoltaic"
+    (t["power"] === "generator" && t["generator:method"] === "photovoltaic") ||
+    t["plant:source"] === "solar" ||
+    t["building:roof:material"] === "solar_panels" ||
+    t["solar:panels"] === "yes" ||
+    t["solar"] === "yes" ||
+    t["roof:solar"] === "yes" ||
+    t["energy:source"] === "solar" ||
+    t["building:energy"] === "solar" ||
+    (t["amenity"] === "generator" && t["generator:source"] === "solar")
   );
 }
 

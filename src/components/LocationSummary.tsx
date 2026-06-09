@@ -483,6 +483,25 @@ export default function LocationSummary() {
           <span>Street View</span>
           <ExternalLink size={12} />
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            const panels = packing.result.panels;
+            if (!panels.length) { notify("Sem painéis para exportar — carrega edifícios primeiro.", "warning"); return; }
+            const fc: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: panels };
+            const blob = new Blob([JSON.stringify(fc, null, 2)], { type: "application/geo+json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const name = building.name ?? `edificio_${building.id.slice(0, 8)}`;
+            a.href = url; a.download = `${name}_paineis.geojson`; a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="w-full flex items-center justify-between text-[12px] text-[#8892a4] hover:text-[#60a5fa] py-1 transition-colors"
+          title="Exportar layout de painéis como GeoJSON (QGIS / entregável ao cliente)"
+        >
+          <span>Exportar layout GeoJSON</span>
+          <ExternalLink size={12} />
+        </button>
         <div className="text-[10px] text-[#4a5160] pt-1">
           Added: {addedDate} · Last change: {updatedDate}
         </div>

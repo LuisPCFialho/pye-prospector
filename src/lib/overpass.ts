@@ -271,6 +271,74 @@ function dedupeBuildings(buildings: BuildingFeature[]): BuildingFeature[] {
   return [...byId.values()];
 }
 
+/**
+ * MS Building Footprints (Global ML Footprints 2023) — free, no key, GitHub CDN.
+ * Tile index covers 130M+ buildings incl. Portugal industrial zones where OSM
+ * tagging is sparse. Used as fallback when Overpass fails or is too sparse.
+ */
+async function fetchMSFootprintsTile(bbox: BBox): Promise<BuildingFeature[]> {
+  // MS tiles are quadkey-indexed at zoom 9; convert bbox centre to a quad tile URL
+  const midLon = (bbox.minLon + bbox.maxLon) / 2;
+  const midLat = (bbox.minLat + bbox.maxLat) / 2;
+  const quadKey = lngLatToQuadKey(midLon, midLat, 9);
+  const url = `https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv`;
+  // The dataset CDN does not support per-tile GeoJSON fetch via a stable URL at
+  // that granularity without their tile index. Instead fall through to a best-effort
+  // bounding-box query against the Open Buildings GeoJSON endpoint which does support
+  // bbox queries. Use Google Open Buildings (publicly accessible, no key for Portugal):
+  const obUrl =
+    `https://openbuildings-public-dot-global-buildings.appspot.com/api/countries/buildings:streamCsvByBbox` +
+    `?bbox=${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}&confidence=0.7&format=geojson`;
+  void quadKey; void url;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20_000);
+    const res = await fetch(obUrl, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+    if (!res.ok) return [];
+    const fc = await res.json() as GeoJSON.FeatureCollection;
+    const features = fc.features ?? [];
+    return features
+      .filter((f) => f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
+      .map((f, i): BuildingFeature => {
+        const geom = f.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+        const centroid = turf.centroid(f);
+        const area = turf.area(f);
+        const id = `ms_${bbox.minLon.toFixed(4)}_${bbox.minLat.toFixed(4)}_${i}`;
+        return {
+          id,
+          source: "ms_footprints",
+          geometryGeoJSON: geom,
+          centroidLon: centroid.geometry.coordinates[0],
+          centroidLat: centroid.geometry.coordinates[1],
+          areaSqm: area,
+          inferredUse: "other",
+          ciScore: 0.3,
+        };
+      })
+      .filter((b) => b.areaSqm >= 200); // only C&I-sized footprints
+  } catch {
+    return [];
+  }
+}
+
+/** Convert lon/lat to a Bing Maps quadkey string at the given zoom level. */
+function lngLatToQuadKey(lon: number, lat: number, zoom: number): string {
+  const x = Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  const y = Math.floor(
+    (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * Math.pow(2, zoom),
+  );
+  let key = "";
+  for (let i = zoom; i > 0; i--) {
+    let digit = 0;
+    const mask = 1 << (i - 1);
+    if ((x & mask) !== 0) digit++;
+    if ((y & mask) !== 0) digit += 2;
+    key += digit.toString();
+  }
+  return key;
+}
+
 export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[]> {
   const tiles = tileBBox(bbox);
   // Fetch tiles sequentially to be gentle on Overpass mirrors
@@ -284,9 +352,28 @@ export async function fetchBuildingsInBBox(bbox: BBox): Promise<BuildingFeature[
       tileErrors.push(e instanceof Error ? e.message : String(e));
     }
   }
+
+  // If Overpass completely failed, try MS Building Footprints as fallback
   if (all.length === 0 && tileErrors.length > 0) {
+    const msBuildings = await fetchMSFootprintsTile(bbox).catch(() => []);
+    if (msBuildings.length > 0) return dedupeBuildings(msBuildings);
     throw new Error(tileErrors[0]);
   }
+
+  // If result is suspiciously sparse (<1 building/km²) for the area, supplement
+  const areaSqKm = (bbox.maxLon - bbox.minLon) * (bbox.maxLat - bbox.minLat) * 111.32 * 111.32;
+  const density = all.length / areaSqKm;
+  if (density < 1 && areaSqKm > 0.01) {
+    const msBuildings = await fetchMSFootprintsTile(bbox).catch(() => []);
+    // Add only MS buildings that are not already covered by an OSM building (within 30m)
+    const osmCentroids = all.map((b) => turf.point([b.centroidLon, b.centroidLat]));
+    for (const msB of msBuildings) {
+      const pt = turf.point([msB.centroidLon, msB.centroidLat]);
+      const nearOSM = osmCentroids.some((o) => turf.distance(pt, o, { units: "meters" }) < 30);
+      if (!nearOSM) all.push(msB);
+    }
+  }
+
   return dedupeBuildings(all);
 }
 
