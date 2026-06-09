@@ -8,6 +8,7 @@ import Sidebar from "./components/Sidebar";
 import LocationSummary from "./components/LocationSummary";
 import MapSearch from "./components/MapSearch";
 import ToastContainer from "./components/ToastContainer";
+import ShortcutsHelp from "./components/ShortcutsHelp";
 import { useGlobalShortcuts } from "./hooks/useKeyboard";
 
 // Code-split heavy / conditionally-rendered views to shrink the initial bundle
@@ -37,18 +38,21 @@ export default function App() {
   const setShowStreetView = useAppStore((s) => s.setShowStreetView);
 
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Global keyboard shortcuts
   useGlobalShortcuts({
     t: () => setViewMode("table"),
     m: () => setViewMode("map"),
     f: () => { setViewMode("map"); setShowSearchFilter(!useAppStore.getState().showSearchFilter); },
+    "?": () => setShowHelp((v) => !v),
     "/": () => {
       setViewMode("map");
       document.querySelector<HTMLInputElement>('input[aria-label="Pesquisar localização"]')?.focus();
     },
     escape: () => {
       const s = useAppStore.getState();
+      if (showHelp) { setShowHelp(false); return; }
       if (s.showLocationDetails) setShowLocationDetails(false);
       else if (s.showStreetView) setShowStreetView(false);
       else if (s.showSearchFilter) setShowSearchFilter(false);
@@ -114,6 +118,7 @@ export default function App() {
       </main>
       </div>
       <ToastContainer />
+      {showHelp && <ShortcutsHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

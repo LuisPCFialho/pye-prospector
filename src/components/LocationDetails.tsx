@@ -141,7 +141,7 @@ export default function LocationDetails() {
       >
         <div className="flex items-center justify-between px-5 py-3 bg-[#12121e] border-b border-slate-700 shrink-0">
           <div className="flex items-center gap-3">
-            <span className="font-semibold">Location Details</span>
+            <span className="font-semibold">Detalhes</span>
           </div>
           <div className="flex items-center gap-2">
             <button

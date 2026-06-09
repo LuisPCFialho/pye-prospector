@@ -105,7 +105,7 @@ export default function TableView() {
           className="flex items-center gap-1.5 text-[#8892a4] hover:text-white text-xs transition-colors"
         >
           <X size={14} />
-          <span>Back to Map</span>
+          <span>Voltar ao mapa</span>
         </button>
         <span className="text-[#1e1f30]">|</span>
         <span className="text-xs text-[#8892a4]">{stats.count.toLocaleString("pt-PT")} edifícios</span>
@@ -166,15 +166,15 @@ export default function TableView() {
                 />
               </th>
               <Th label="Score" k="score" />
-              <Th label="Location Name" k="name" />
-              <Th label="Company"       k="company" />
-              <Th label="Industry" />
-              <Th label="Area (m²)"     k="area" />
-              <Th label="Solar Potential (kWp)" k="kwp" />
+              <Th label="Nome" k="name" />
+              <Th label="Empresa"       k="company" />
+              <Th label="Setor" />
+              <Th label="Área (m²)"     k="area" />
+              <Th label="Potencial (kWp)" k="kwp" />
               <Th label="Solar" />
-              <Th label="Flag" />
+              <Th label="Estado" />
               <Th label="Website" />
-              <Th label="Direct Link" />
+              <Th label="Mapa" />
             </tr>
           </thead>
           <tbody>

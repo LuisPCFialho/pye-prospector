@@ -187,7 +187,7 @@ export default function LocationSummary() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1f30]">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-white">Location Summary</span>
+          <span className="text-sm font-semibold text-white">Resumo</span>
           {(() => {
             const s = lead?.score ?? scoreLead(building, lead).score;
             return (
@@ -224,21 +224,21 @@ export default function LocationSummary() {
           <>
             {/* Type */}
             <FieldRow
-              label="Location Type"
+              label="Tipo"
               icon={<Info size={12} className="text-[#8892a4]" />}
-              value="Rooftop"
+              value="Cobertura"
             />
 
             {/* Area */}
             <FieldRow
-              label="Area"
+              label="Área"
               prefix="m²"
               value={building.areaSqm.toLocaleString("pt-PT")}
             />
 
             {/* Solar potential */}
             <FieldRow
-              label="Solar Potential"
+              label="Potencial Solar"
               prefix="kWp"
               value={kwp.toFixed(1)}
               accent
@@ -256,7 +256,7 @@ export default function LocationSummary() {
 
             {/* Location Name */}
             <EditableFieldRow
-              label="Location Name"
+              label="Nome"
               icon={<Building2 size={13} className="text-[#8892a4]" />}
               value={locationName}
               editing={editingField === "address"}
@@ -269,7 +269,7 @@ export default function LocationSummary() {
 
             {/* Company Name */}
             <EditableFieldRow
-              label="Company Name"
+              label="Empresa"
               icon={<Building2 size={13} className="text-[#8892a4]" />}
               value={displayCompany}
               editing={editingField === "company"}
@@ -296,7 +296,7 @@ export default function LocationSummary() {
             {/* Telephone — show from OSM or lead */}
             {displayPhone && (
               <EditableFieldRow
-                label="Telephone"
+                label="Telefone"
                 icon={<Phone size={13} className="text-[#8892a4]" />}
                 value={displayPhone}
                 editing={editingField === "telephone"}
@@ -448,7 +448,7 @@ export default function LocationSummary() {
           onClick={() => setShowLocationDetails(true)}
           className="w-full flex items-center justify-between text-[12px] text-[#8892a4] hover:text-white py-1 transition-colors"
         >
-          <span>More Location Details</span>
+          <span>Mais detalhes</span>
           <ChevronRight size={14} />
         </button>
         <button
