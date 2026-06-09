@@ -48,7 +48,7 @@ function addAppLayers(map: maplibregl.Map) {
     promoteId: undefined,
   });
 
-  // Fill — color driven by feature property 'fillColor', cyan when selected
+  // Fill — cyan when selected, amber when multi-selected, else by status color
   map.addLayer({
     id: "buildings-fill",
     type: "fill",
@@ -56,14 +56,14 @@ function addAppLayers(map: maplibregl.Map) {
     paint: {
       "fill-color": [
         "case",
-        ["boolean", ["feature-state", "selected"], false],
-        "#06b6d4",
+        ["boolean", ["feature-state", "selected"], false], "#06b6d4",
+        ["boolean", ["feature-state", "multiselected"], false], "#f97316",
         ["get", "fillColor"],
       ],
       "fill-opacity": [
         "case",
-        ["boolean", ["feature-state", "selected"], false],
-        0.40,
+        ["boolean", ["feature-state", "selected"], false], 0.40,
+        ["boolean", ["feature-state", "multiselected"], false], 0.45,
         0.22,
       ],
     },
@@ -77,14 +77,14 @@ function addAppLayers(map: maplibregl.Map) {
     paint: {
       "line-color": [
         "case",
-        ["boolean", ["feature-state", "selected"], false],
-        "#06b6d4",
+        ["boolean", ["feature-state", "selected"], false], "#06b6d4",
+        ["boolean", ["feature-state", "multiselected"], false], "#f97316",
         ["get", "fillColor"],
       ],
       "line-width": [
         "case",
-        ["boolean", ["feature-state", "selected"], false],
-        2,
+        ["boolean", ["feature-state", "selected"], false], 2,
+        ["boolean", ["feature-state", "multiselected"], false], 2.5,
         1.5,
       ],
     },
@@ -128,6 +128,8 @@ export default function MapView() {
   const setShowSearchFilter = useAppStore((s) => s.setShowSearchFilter);
   const notify              = useAppStore((s) => s.notify);
   const isLoadingBuildings  = useAppStore((s) => s.isLoadingBuildings);
+  const setViewMode         = useAppStore((s) => s.setViewMode);
+  const selectionCount      = useAppStore((s) => s.selectionIds.length);
 
   // Filtered buildings from shared hook (memoized, single source of truth)
   const visibleBuildings = useFilteredBuildings();
@@ -226,6 +228,16 @@ export default function MapView() {
       }
 
       const features = map.queryRenderedFeatures(e.point, { layers: ["buildings-fill"] });
+      const buildingId = features[0]?.properties?.id as string | undefined;
+
+      // Shift/Ctrl-click → toggle multi-selection (feeds bulk ops) instead of opening panel
+      if ((e.originalEvent.shiftKey || e.originalEvent.ctrlKey) && buildingId && features[0].id !== undefined) {
+        useAppStore.getState().toggleSelection(buildingId);
+        const isSel = useAppStore.getState().selectionIds.includes(buildingId);
+        map.setFeatureState({ source: BUILDINGS_SOURCE, id: features[0].id }, { multiselected: isSel });
+        return;
+      }
+
       if (!features.length) {
         if (selectedIdRef.current !== null) {
           map.setFeatureState({ source: BUILDINGS_SOURCE, id: selectedIdRef.current }, { selected: false });
@@ -378,6 +390,29 @@ export default function MapView() {
           <Filter size={11} />
           {visibleBuildings.length}/{totalBuildings} edifícios visíveis
         </button>
+      )}
+
+      {/* Multi-selection badge → opens Table for bulk ops */}
+      {selectionCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setViewMode("table")}
+          className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-[#f97316] hover:bg-[#ea6d0e] text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg transition-colors"
+          title="Ver selecionados na tabela (ações em massa)"
+        >
+          {selectionCount} selecionados · ações em massa
+        </button>
+      )}
+
+      {/* Legend */}
+      {totalBuildings > 0 && (
+        <div className="absolute bottom-5 left-3 z-10 bg-[#13131f]/90 border border-[#1e1f30] rounded-lg px-2.5 py-2 text-[10px] text-[#c8d0df] shadow-lg pointer-events-none space-y-1">
+          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: "#ef4444" }} /> Sem PV / por contactar</div>
+          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: "#22c55e" }} /> Com PV / ganho</div>
+          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: "#eab308" }} /> Em progresso</div>
+          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: "#06b6d4" }} /> Selecionado</div>
+          <div className="text-[9px] text-[#4a5160] pt-0.5">Shift+click = multi-seleção</div>
+        </div>
       )}
 
       <BottomToolbar mapRef={mapRef} />
