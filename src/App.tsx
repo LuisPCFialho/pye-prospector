@@ -10,6 +10,7 @@ import MapSearch from "./components/MapSearch";
 import ToastContainer from "./components/ToastContainer";
 import ShortcutsHelp from "./components/ShortcutsHelp";
 import { useGlobalShortcuts } from "./hooks/useKeyboard";
+import { checkForUpdates } from "./lib/updater";
 
 // Code-split heavy / conditionally-rendered views to shrink the initial bundle
 const LocationDetails   = lazy(() => import("./components/LocationDetails"));
@@ -61,6 +62,8 @@ export default function App() {
   });
 
   useEffect(() => {
+    // Check for app updates once on startup (no-op in browser/dev, fail-safe)
+    void checkForUpdates();
     getAllBuildings()
       .then(setBuildings)
       .catch(() => { /* DB not available in browser — silently skip */ });

@@ -26,8 +26,17 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2QUFDOEUxNDRFOTIxOUEKUldTYUllbEU0Y2lxRnNaNzdrS0tUekJWclRwZ096K2NSVHNQdzBpL3hMcnV5a2hGYWY0Z0hzdjYK",
+      "endpoints": [
+        "https://github.com/LuisPCFialho/pye-prospector/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
