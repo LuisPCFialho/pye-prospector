@@ -28,23 +28,31 @@ export function getRoofPacking(
   // Bypass cache when caller supplies obstacles (user-drawn exclusions)
   if (!obstacles && cache.has(b.id)) return cache.get(b.id)!;
 
-  const poly: GeoJSON.Polygon =
-    b.geometryGeoJSON.type === "Polygon"
-      ? (b.geometryGeoJSON as GeoJSON.Polygon)
-      : // largest ring of a MultiPolygon
-        { type: "Polygon", coordinates: (b.geometryGeoJSON as GeoJSON.MultiPolygon).coordinates[0] };
-
   const roof = inferRoof(b);
   const derate = OBSTACLE_DERATE[b.inferredUse ?? "other"] ?? 0.88;
-  const result = packRoof(poly, {
-    module,
-    mount: roof.mount,
-    tiltDeg: roof.tiltDeg,
-    lat: b.centroidLat,
-    setbackM: 1.0,
-    obstacles,
-    obstacleDerate: derate,
-  });
+  const packOpts = { module, mount: roof.mount, tiltDeg: roof.tiltDeg, lat: b.centroidLat, setbackM: 1.0, obstacles, obstacleDerate: derate };
+
+  // Pack every sub-polygon in a MultiPolygon and sum — disjoint roof sections
+  // (e.g. two warehouse wings) are no longer silently ignored.
+  let result: PackResult;
+  if (b.geometryGeoJSON.type === "MultiPolygon") {
+    const parts = (b.geometryGeoJSON as GeoJSON.MultiPolygon).coordinates.map(
+      (rings) => packRoof({ type: "Polygon", coordinates: rings }, packOpts),
+    );
+    // Merge all parts: sum modules/kwp, keep panels/meta from all parts combined
+    result = parts.reduce<PackResult>((acc, p) => ({
+      modules: acc.modules + p.modules,
+      kwp: Math.round((acc.kwp + p.kwp) * 10) / 10,
+      kwpDerated: Math.round((acc.kwpDerated + p.kwpDerated) * 10) / 10,
+      gcr: (acc.gcr + p.gcr) / 2, // average GCR across sections
+      bearingDeg: acc.bearingDeg, // use first section's orientation
+      panels: [...acc.panels, ...p.panels],
+      mount: acc.mount,
+      tiltDeg: acc.tiltDeg,
+    }), { modules: 0, kwp: 0, kwpDerated: 0, gcr: 0, bearingDeg: parts[0]?.bearingDeg ?? 0, panels: [], mount: roof.mount, tiltDeg: roof.tiltDeg });
+  } else {
+    result = packRoof(b.geometryGeoJSON as GeoJSON.Polygon, packOpts);
+  }
 
   const out = { result, roof };
   if (!obstacles) cache.set(b.id, out);

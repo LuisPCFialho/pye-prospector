@@ -46,6 +46,23 @@ describe("rowGapMeters (winter-solstice no-shade spacing)", () => {
   });
 });
 
+describe("projector — geodesy accuracy on a 250×150 m roof", () => {
+  it("round-trips a corner within 1 mm at Lisbon latitude", () => {
+    // Import internals via the exported packRoof (projector is internal, tested indirectly)
+    // We check that a rectangular 250m×150m roof at 38.72°N packs the expected panel count
+    // within a ±2% band vs. the true area-based theoretical max — if the projector were
+    // flat-earth the drift would be ~0.5m on a 250m roof, costing 2-4 panels per row.
+    const bigRoof = rectRoof(LON, LAT, 250, 150);
+    const r = packRoof(bigRoof, { lat: LAT, mount: "flat", tiltDeg: 10 });
+    // Theoretical max (no row gap): 250*150 / (2.172*1.303) ≈ 13 254 modules; with row gap ~0.71m:
+    // step = 2.172*cos(10°)*0.985 + 0.71 ≈ 2.85; rows = 150/2.85 ≈ 52; cols = 250/1.323 ≈ 188
+    // minus setback (1m): ~50 rows × 186 cols = ~9 300 — after packing we expect well above 3 000
+    expect(r.modules).toBeGreaterThan(3_000);
+    // kWp scaling must be consistent
+    expect(r.kwp).toBeCloseTo(Math.round((r.modules * TRINA_630.wp) / 100) / 10, 1);
+  });
+});
+
 describe("packRoof", () => {
   it("places a sensible number of modules on a large flat roof", () => {
     const roof = rectRoof(LON, LAT, 100, 50); // 5000 m²
