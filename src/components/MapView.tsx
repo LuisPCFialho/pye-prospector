@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
-import { Layers, Maximize2, Filter, Box, Grid3x3 } from "lucide-react";
+import { Layers, Maximize2, Filter, Box, Grid3x3, Tag, Ban, Eraser } from "lucide-react";
 import { config } from "../config";
 import { setMapInstance } from "../lib/mapInstance";
 import { useAppStore } from "../store/appStore";
@@ -8,7 +8,8 @@ import { buildingsToGeoJSON } from "../lib/overpass";
 import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
 import { useFilteredBuildings, useIsFilterActive } from "../hooks/useFilteredBuildings";
-import { getRoofPacking } from "../lib/roofPacking";
+import { getRoofPacking, clearPackingCache } from "../lib/roofPacking";
+import { BUILDING_USE_LABELS } from "../types/building";
 import * as turf from "@turf/turf";
 
 const OSM_STYLE: maplibregl.StyleSpecification = {
@@ -32,6 +33,12 @@ const MAPTILER_STYLE = (key: string) =>
 const BUILDINGS_SOURCE = "buildings";
 const DRAW_SOURCE = "draw-polygon";
 const PANELS_SOURCE = "panels";
+const OBSTACLES_SOURCE = "obstacles";
+
+/** Zoom at which individual buildings are large enough to label with kWp. */
+const LABEL_MIN_ZOOM = 16;
+/** Cap on simultaneous kWp markers to keep pan/zoom smooth. */
+const MAX_LABELS = 60;
 
 function addAppLayers(map: maplibregl.Map) {
   if (map.getSource(BUILDINGS_SOURCE)) return;
@@ -131,6 +138,24 @@ function addAppLayers(map: maplibregl.Map) {
     paint: { "line-color": "#60a5fa", "line-width": 0.4 },
   });
 
+  // Saved obstacle exclusion zones (UTAs, skylights, walls) for the selected building
+  map.addSource(OBSTACLES_SOURCE, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer({
+    id: "obstacles-fill",
+    type: "fill",
+    source: OBSTACLES_SOURCE,
+    paint: { "fill-color": "#ef4444", "fill-opacity": 0.35 },
+  });
+  map.addLayer({
+    id: "obstacles-outline",
+    type: "line",
+    source: OBSTACLES_SOURCE,
+    paint: { "line-color": "#ef4444", "line-width": 1.5 },
+  });
+
   // Draw polygon source
   map.addSource(DRAW_SOURCE, {
     type: "geojson",
@@ -156,8 +181,12 @@ export default function MapView() {
   const selectedIdRef = useRef<number | string | null>(null);
   const drawCoordsRef = useRef<[number, number][]>([]);
   const is3DRef = useRef(false);
+  const labelMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
+  const labelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showPanels, setShowPanels] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
 
   const leads               = useAppStore((s) => s.leads);
   const buildings           = useAppStore((s) => s.buildings);
@@ -175,6 +204,8 @@ export default function MapView() {
   const isLoadingBuildings  = useAppStore((s) => s.isLoadingBuildings);
   const setViewMode         = useAppStore((s) => s.setViewMode);
   const selectionCount      = useAppStore((s) => s.selectionIds.length);
+  const obstacles           = useAppStore((s) => s.obstacles);
+  const addObstacle         = useAppStore((s) => s.addObstacle);
 
   // Filtered buildings from shared hook (memoized, single source of truth)
   const visibleBuildings = useFilteredBuildings();
@@ -259,6 +290,8 @@ export default function MapView() {
 
     return () => {
       if (saveTimer) clearTimeout(saveTimer);
+      labelMarkersRef.current.forEach((m) => m.remove());
+      labelMarkersRef.current.clear();
       map.remove();
       mapRef.current = null;
     };
@@ -270,7 +303,8 @@ export default function MapView() {
       const map = mapRef.current;
       if (!map) return;
 
-      if (useAppStore.getState().drawMode === "polygon") {
+      const mode = useAppStore.getState().drawMode;
+      if (mode === "polygon" || mode === "obstacle") {
         const pt: [number, number] = [e.lngLat.lng, e.lngLat.lat];
         drawCoordsRef.current = [...drawCoordsRef.current, pt];
         updateDrawLayer(map, drawCoordsRef.current);
@@ -313,11 +347,27 @@ export default function MapView() {
     async (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
       const map = mapRef.current;
-      if (!map || useAppStore.getState().drawMode !== "polygon") return;
+      if (!map) return;
+      const mode = useAppStore.getState().drawMode;
+      if (mode !== "polygon" && mode !== "obstacle") return;
       const coords = drawCoordsRef.current;
       if (coords.length < 3) return;
       const closed = [...coords, coords[0]];
       const poly   = turf.polygon([closed]);
+
+      // Obstacle mode: store the exclusion zone on the selected building and re-pack
+      if (mode === "obstacle") {
+        clearDraw(map);
+        setDrawMode("none");
+        map.getCanvas().style.cursor = "";
+        const sel = useAppStore.getState().selectedBuildingId;
+        if (!sel) { notify("Seleciona um edifício antes de marcar obstáculos.", "warning"); return; }
+        addObstacle(sel, poly.geometry);
+        clearPackingCache(sel);
+        notify("Obstáculo marcado — kWp recalculado.", "success");
+        return;
+      }
+
       const bbox   = turf.bbox(poly);
       clearDraw(map);
       setDrawMode("none");
@@ -342,14 +392,14 @@ export default function MapView() {
         setLoadingBuildings(false);
       }
     },
-    [addBuildings, setLeads, setDrawMode, setLoadingBuildings, notify],
+    [addBuildings, setLeads, setDrawMode, setLoadingBuildings, notify, addObstacle],
   );
 
   // ESC to cancel draw — only acts when draw mode is actually active
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape" || !mapRef.current) return;
-      if (useAppStore.getState().drawMode !== "polygon") return;
+      if (useAppStore.getState().drawMode === "none") return;
       clearDraw(mapRef.current);
       setDrawMode("none");
       mapRef.current.getCanvas().style.cursor = "";
@@ -371,7 +421,8 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.getCanvas().style.cursor = drawMode === "polygon" ? "crosshair" : "";
+    map.getCanvas().style.cursor =
+      drawMode === "polygon" || drawMode === "obstacle" ? "crosshair" : "";
     if (drawMode === "none") { clearDraw(map); drawCoordsRef.current = []; }
   }, [drawMode]);
 
@@ -396,27 +447,149 @@ export default function MapView() {
     if (b) map.easeTo({ center: [b.centroidLon, b.centroidLat], duration: 400 });
   }, [selectedBuildingId]);
 
-  // Draw packed panels for the selected building
+  // Draw packed panels + obstacle exclusion zones for the selected building.
+  // User-drawn obstacles are subtracted from the roof so kWp reflects real usable area.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const setPanels = (fc: GeoJSON.FeatureCollection) => {
-      const src = map.getSource(PANELS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    const setData = (source: string, fc: GeoJSON.FeatureCollection) => {
+      const src = map.getSource(source) as maplibregl.GeoJSONSource | undefined;
       if (src) src.setData(fc);
     };
-    if (!selectedBuildingId || !showPanels) {
-      setPanels({ type: "FeatureCollection", features: [] });
+    const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+
+    if (!selectedBuildingId) {
+      setData(PANELS_SOURCE, empty);
+      setData(OBSTACLES_SOURCE, empty);
       return;
     }
+
+    const obs = obstacles[selectedBuildingId] ?? [];
+    setData(OBSTACLES_SOURCE, {
+      type: "FeatureCollection",
+      features: obs.map((p) => ({ type: "Feature", geometry: p, properties: {} } as GeoJSON.Feature)),
+    });
+
+    if (!showPanels) { setData(PANELS_SOURCE, empty); return; }
     const b = buildings.find((x) => x.id === selectedBuildingId);
-    if (!b) { setPanels({ type: "FeatureCollection", features: [] }); return; }
+    if (!b) { setData(PANELS_SOURCE, empty); return; }
     try {
-      const { result } = getRoofPacking(b);
-      setPanels({ type: "FeatureCollection", features: result.panels });
+      const { result } = getRoofPacking(b, undefined, obs.length ? obs : undefined);
+      setData(PANELS_SOURCE, { type: "FeatureCollection", features: result.panels });
     } catch {
-      setPanels({ type: "FeatureCollection", features: [] });
+      setData(PANELS_SOURCE, empty);
     }
-  }, [selectedBuildingId, showPanels, buildings]);
+  }, [selectedBuildingId, showPanels, buildings, obstacles]);
+
+  // kWp labels on the map (DOM markers — style-independent, survive setStyle).
+  // Bounded to buildings in view at high zoom and capped for smooth pan/zoom.
+  const refreshLabels = useCallback(() => {
+    const map = mapRef.current;
+    const markers = labelMarkersRef.current;
+    if (!map) return;
+    if (!showLabels || map.getZoom() < LABEL_MIN_ZOOM) {
+      markers.forEach((m) => m.remove());
+      markers.clear();
+      return;
+    }
+    const bounds = map.getBounds();
+    const all = useAppStore.getState().buildings;
+    const obs = useAppStore.getState().obstacles;
+    const keep = new Set<string>();
+    let count = 0;
+    for (const b of all) {
+      if (count >= MAX_LABELS) break;
+      if (!bounds.contains([b.centroidLon, b.centroidLat])) continue;
+      let kwp = 0;
+      try {
+        const o = obs[b.id];
+        kwp = getRoofPacking(b, undefined, o?.length ? o : undefined).result.kwpDerated;
+      } catch { kwp = 0; }
+      if (kwp <= 0) { const m = markers.get(b.id); if (m) { m.remove(); markers.delete(b.id); } continue; }
+      count++;
+      keep.add(b.id);
+      const text = `${kwp >= 100 ? Math.round(kwp) : kwp.toFixed(1)} kWp`;
+      const existing = markers.get(b.id);
+      if (existing) {
+        existing.getElement().textContent = text;
+        existing.setLngLat([b.centroidLon, b.centroidLat]);
+      } else {
+        const el = document.createElement("div");
+        el.style.cssText =
+          "background:rgba(30,58,138,0.92);color:#dbeafe;font:600 10px/1 system-ui,sans-serif;" +
+          "padding:2px 5px;border-radius:5px;border:1px solid #60a5fa;white-space:nowrap;" +
+          "pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,0.4)";
+        el.textContent = text;
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([b.centroidLon, b.centroidLat])
+          .addTo(map);
+        markers.set(b.id, marker);
+      }
+    }
+    for (const [id, m] of markers) {
+      if (!keep.has(id)) { m.remove(); markers.delete(id); }
+    }
+  }, [showLabels]);
+
+  // Refresh labels on pan/zoom (debounced) and on data/visibility changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onMove = () => {
+      if (labelTimerRef.current) clearTimeout(labelTimerRef.current);
+      labelTimerRef.current = setTimeout(refreshLabels, 250);
+    };
+    map.on("moveend", onMove);
+    map.on("zoomend", onMove);
+    refreshLabels();
+    return () => {
+      map.off("moveend", onMove);
+      map.off("zoomend", onMove);
+      if (labelTimerRef.current) clearTimeout(labelTimerRef.current);
+    };
+  }, [refreshLabels]);
+  useEffect(() => { refreshLabels(); }, [refreshLabels, buildings, obstacles]);
+
+  // Hover tooltip: building name + area + kWp (the primary prospecting metrics)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+    hoverPopupRef.current = popup;
+    const onMove = (e: maplibregl.MapLayerMouseEvent) => {
+      if (useAppStore.getState().drawMode !== "none") { popup.remove(); return; }
+      const f = e.features?.[0];
+      if (!f) return;
+      map.getCanvas().style.cursor = "pointer";
+      const id = f.properties?.id as string | undefined;
+      const b = id ? useAppStore.getState().buildings.find((x) => x.id === id) : undefined;
+      if (!b) { popup.remove(); return; }
+      let kwp = 0;
+      try {
+        const o = useAppStore.getState().obstacles[b.id];
+        kwp = getRoofPacking(b, undefined, o?.length ? o : undefined).result.kwpDerated;
+      } catch { kwp = 0; }
+      const label = b.name ?? (b.inferredUse ? BUILDING_USE_LABELS[b.inferredUse] : "Edifício");
+      const kwpText = kwp >= 100 ? Math.round(kwp).toString() : kwp.toFixed(1);
+      popup
+        .setLngLat(e.lngLat)
+        .setHTML(
+          `<div style="font:600 11px system-ui,sans-serif;color:#e5edf7">${escapeHtml(label)}</div>` +
+          `<div style="font:11px system-ui,sans-serif;color:#9fb0c8;margin-top:2px">` +
+          `${Math.round(b.areaSqm).toLocaleString("pt-PT")} m² · ` +
+          `<b style="color:#60a5fa">${kwpText} kWp</b></div>`,
+        )
+        .addTo(map);
+    };
+    const onLeave = () => { map.getCanvas().style.cursor = ""; popup.remove(); };
+    map.on("mousemove", "buildings-fill", onMove);
+    map.on("mouseleave", "buildings-fill", onLeave);
+    return () => {
+      map.off("mousemove", "buildings-fill", onMove);
+      map.off("mouseleave", "buildings-fill", onLeave);
+      popup.remove();
+    };
+  }, []);
 
   return (
     <>
@@ -433,6 +606,12 @@ export default function MapView() {
       {drawMode === "polygon" && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-[#f97316]/95 text-white text-xs font-semibold px-5 py-2 rounded-full shadow-lg pointer-events-none">
           Click para adicionar pontos · Double-click para terminar · ESC para cancelar
+        </div>
+      )}
+
+      {drawMode === "obstacle" && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-[#ef4444]/95 text-white text-xs font-semibold px-5 py-2 rounded-full shadow-lg pointer-events-none">
+          Marca o obstáculo (UTA/claraboia/parede) · Double-click para terminar · ESC para cancelar
         </div>
       )}
 
@@ -492,22 +671,48 @@ export default function MapView() {
         is3DRef={is3DRef}
         showPanels={showPanels}
         onTogglePanels={() => setShowPanels((v) => !v)}
+        showLabels={showLabels}
+        onToggleLabels={() => setShowLabels((v) => !v)}
       />
     </>
   );
 }
 
 function BottomToolbar({
-  mapRef, is3DRef, showPanels, onTogglePanels,
+  mapRef, is3DRef, showPanels, onTogglePanels, showLabels, onToggleLabels,
 }: {
   mapRef: RefObject<maplibregl.Map | null>;
   is3DRef: React.MutableRefObject<boolean>;
   showPanels: boolean;
   onTogglePanels: () => void;
+  showLabels: boolean;
+  onToggleLabels: () => void;
 }) {
   const [satellite, setSatellite] = useState(!!config.maptilerApiKey);
   const [fullscreen, setFullscreen] = useState(false);
   const [is3D, setIs3D] = useState(false);
+
+  const drawMode           = useAppStore((s) => s.drawMode);
+  const setDrawMode        = useAppStore((s) => s.setDrawMode);
+  const selectedBuildingId = useAppStore((s) => s.selectedBuildingId);
+  const clearObstacles     = useAppStore((s) => s.clearObstacles);
+  const hasObstacles       = useAppStore(
+    (s) => !!(s.selectedBuildingId && s.obstacles[s.selectedBuildingId]?.length),
+  );
+  const notify             = useAppStore((s) => s.notify);
+  const drawingObstacle    = drawMode === "obstacle";
+
+  function toggleObstacle() {
+    if (!selectedBuildingId) { notify("Seleciona um edifício primeiro.", "warning"); return; }
+    setDrawMode(drawingObstacle ? "none" : "obstacle");
+  }
+
+  function handleClearObstacles() {
+    if (!selectedBuildingId) return;
+    clearObstacles(selectedBuildingId);
+    clearPackingCache(selectedBuildingId);
+    notify("Obstáculos removidos — kWp recalculado.", "info");
+  }
 
   function toggleLayers() {
     const map = mapRef.current;
@@ -570,6 +775,28 @@ function BottomToolbar({
       <button type="button" title={showPanels ? "Ocultar painéis" : "Mostrar painéis"} aria-pressed={showPanels ? "true" : "false"} onClick={onTogglePanels} className={btn(showPanels)}>
         <Grid3x3 size={16} />
       </button>
+      <button type="button" title={showLabels ? "Ocultar kWp no mapa" : "Mostrar kWp no mapa"} aria-pressed={showLabels ? "true" : "false"} onClick={onToggleLabels} className={btn(showLabels)}>
+        <Tag size={16} />
+      </button>
+      <button
+        type="button"
+        title={
+          !selectedBuildingId
+            ? "Seleciona um edifício para marcar obstáculos"
+            : drawingObstacle ? "A marcar obstáculo (ESC cancela)" : "Marcar obstáculo (UTA/claraboia/parede)"
+        }
+        aria-pressed={drawingObstacle ? "true" : "false"}
+        onClick={toggleObstacle}
+        disabled={!selectedBuildingId}
+        className={`${btn(drawingObstacle)} ${!selectedBuildingId ? "opacity-40 cursor-not-allowed" : ""}`}
+      >
+        <Ban size={16} />
+      </button>
+      {hasObstacles && (
+        <button type="button" title="Limpar obstáculos deste edifício" onClick={handleClearObstacles} className={btn(false)}>
+          <Eraser size={16} />
+        </button>
+      )}
       <button type="button" title={fullscreen ? "Sair de fullscreen" : "Fullscreen"} onClick={toggleFullscreen} className={btn(false)}>
         <Maximize2 size={16} />
       </button>
@@ -598,4 +825,11 @@ function updateDrawLayer(map: maplibregl.Map, coords: [number, number][]) {
 function clearDraw(map: maplibregl.Map) {
   const src = map.getSource(DRAW_SOURCE) as maplibregl.GeoJSONSource | undefined;
   if (src) src.setData({ type: "FeatureCollection", features: [] });
+}
+
+/** Escape text before injecting into a popup's innerHTML (names are untrusted OSM data). */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c),
+  );
 }

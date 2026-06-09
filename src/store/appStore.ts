@@ -5,7 +5,7 @@ import type {
 } from "../types/building";
 
 export type ViewMode = "map" | "table";
-export type DrawMode = "none" | "polygon";
+export type DrawMode = "none" | "polygon" | "obstacle";
 export type ToastSeverity = "success" | "error" | "warning" | "info";
 
 export interface Toast {
@@ -27,6 +27,10 @@ interface AppState {
   // Multi-selection
   selectionIds: string[];
   selectionCursor: number;
+
+  // User-drawn obstacle exclusion zones (UTAs, skylights, walls) per building.
+  // Subtracted from the roof before panel packing so kWp reflects real usable area.
+  obstacles: Record<string, GeoJSON.Polygon[]>;
 
   showLocationSummary: boolean;
   showLocationDetails: boolean;
@@ -71,6 +75,9 @@ interface AppState {
   toggleSelection: (id: string) => void;
   clearSelection: () => void;
 
+  addObstacle: (buildingId: string, poly: GeoJSON.Polygon) => void;
+  clearObstacles: (buildingId: string) => void;
+
   setShowLocationDetails: (v: boolean) => void;
   setShowStreetView: (v: boolean) => void;
   setShowSearchFilter: (v: boolean) => void;
@@ -108,6 +115,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedBuildingId: null,
   selectionIds: [],
   selectionCursor: 0,
+  obstacles: {},
 
   showLocationSummary: false,
   showLocationDetails: false,
@@ -166,6 +174,21 @@ export const useAppStore = create<AppState>((set) => ({
         : [...s.selectionIds, id],
     })),
   clearSelection: () => set({ selectionIds: [] }),
+
+  addObstacle: (buildingId, poly) =>
+    set((s) => ({
+      obstacles: {
+        ...s.obstacles,
+        [buildingId]: [...(s.obstacles[buildingId] ?? []), poly],
+      },
+    })),
+  clearObstacles: (buildingId) =>
+    set((s) => {
+      if (!s.obstacles[buildingId]) return {};
+      const next = { ...s.obstacles };
+      delete next[buildingId];
+      return { obstacles: next };
+    }),
 
   setShowLocationDetails: (v) => set({ showLocationDetails: v }),
   setShowStreetView: (v) => set({ showStreetView: v }),

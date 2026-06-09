@@ -31,6 +31,9 @@ export default function LocationSummary() {
   const upsertLead          = useAppStore((s) => s.upsertLead);
   const setSuccessMessage   = useAppStore((s) => s.setSuccessMessage);
   const notify              = useAppStore((s) => s.notify);
+  const buildingObstacles   = useAppStore(
+    (s) => (s.selectedBuildingId ? s.obstacles[s.selectedBuildingId] : undefined),
+  );
 
   const [tab, setTab]                   = useState<Tab>("flag");
   const [calcingSolar, setCalcing]       = useState(false);
@@ -84,8 +87,13 @@ export default function LocationSummary() {
 
   if (!showLocationSummary || !building) return null;
 
-  // Accurate packed layout (real module placement) is the primary kWp source
-  const packing = getRoofPacking(building);
+  // Accurate packed layout (real module placement) is the primary kWp source.
+  // User-drawn obstacles (UTAs/skylights/walls) are subtracted so kWp is real.
+  const packing = getRoofPacking(
+    building,
+    undefined,
+    buildingObstacles?.length ? buildingObstacles : undefined,
+  );
   const packedKwp = packing.result.kwpDerated;
   const kwp = lead?.estimatedKwp ?? (packedKwp > 0 ? packedKwp : estimatePeakPower(building.areaSqm));
 
