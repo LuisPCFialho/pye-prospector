@@ -6,6 +6,7 @@ import SolarChart from "./SolarChart";
 import NotesAndTasks from "./NotesAndTasks";
 import { openExternal, streetViewUrl, googleMapsUrl, googleVerifyUrl } from "../lib/openExternal";
 import { computeFinance, formatEur, suggestBattery, type FinancingModel } from "../lib/solarFinance";
+import { generateLeadPdf } from "../lib/pdfReport";
 
 type Tab = "flag" | "solar" | "individual" | "notes" | "metadata" | "streetview";
 
@@ -143,6 +144,17 @@ export default function LocationDetails() {
             <span className="font-semibold">Location Details</span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try { await generateLeadPdf(building, lead); notify("Relatório PDF gerado", "success"); }
+                catch (e) { notify(`Erro no PDF: ${e instanceof Error ? e.message : "desconhecido"}`, "error"); }
+              }}
+              className="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+              title="Gerar relatório PDF"
+            >
+              📄 PDF
+            </button>
             {lead && (
               <button
                 type="button"
