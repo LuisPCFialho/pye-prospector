@@ -64,6 +64,12 @@ pub fn run() {
             sql: include_str!("../migrations/0004_crm_features.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "performance_indexes",
+            sql: include_str!("../migrations/0005_indexes.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

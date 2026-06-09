@@ -3,10 +3,10 @@ import { ArrowUpDown, ExternalLink, Sun, Flag, X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { exportLeadsCSV, bulkSetStage, bulkSetFlag, getAllLeads } from "../db/database";
 import { SOLAR_STATUS_COLORS, PIPELINE_COLORS, PIPELINE_LABELS, type PipelineStage } from "../types/building";
-import { estimatePeakPower } from "../lib/pvgis";
 import { getDisplayCompany, getDisplayWebsite } from "../lib/leadAutoFill";
 import { scoreColor } from "../lib/leadScore";
 import { useFilteredBuildings } from "../hooks/useFilteredBuildings";
+import { getRealKwp } from "../lib/roofPacking";
 
 type SortKey = "name" | "area" | "kwp" | "company" | "pipeline" | "score";
 
@@ -21,8 +21,9 @@ export default function TableView() {
   const clearSelection = useAppStore((s) => s.clearSelection);
   const setLeads       = useAppStore((s) => s.setLeads);
   const buildings      = useFilteredBuildings();
+  const obstacles      = useAppStore((s) => s.obstacles);
 
-  const [sortKey, setSortKey]   = useState<SortKey>("score");
+  const [sortKey, setSortKey]   = useState<SortKey>("kwp");
   const [sortDesc, setSortDesc] = useState(true);
 
   async function applyBulk(fn: () => Promise<void>, msg: string) {
@@ -64,8 +65,8 @@ export default function TableView() {
       switch (sortKey) {
         case "name":     va = a.name ?? ""; vb = b.name ?? ""; break;
         case "area":     va = a.areaSqm;    vb = b.areaSqm;    break;
-        case "kwp":      va = la?.estimatedKwp ?? estimatePeakPower(a.areaSqm);
-                         vb = lb?.estimatedKwp ?? estimatePeakPower(b.areaSqm); break;
+        case "kwp":      va = getRealKwp(a, obstacles[a.id]);
+                         vb = getRealKwp(b, obstacles[b.id]); break;
         case "company":  va = getDisplayCompany(a, la); vb = getDisplayCompany(b, lb); break;
         case "pipeline": va = la?.pipelineStage ?? ""; vb = lb?.pipelineStage ?? ""; break;
         case "score":    va = la?.score ?? 0; vb = lb?.score ?? 0; break;
@@ -78,7 +79,7 @@ export default function TableView() {
     let totalArea = 0, totalKwp = 0;
     for (const b of buildings) {
       totalArea += b.areaSqm;
-      totalKwp += leads[b.id]?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+      totalKwp += getRealKwp(b, obstacles[b.id]);
     }
     return { count: buildings.length, totalArea, totalKwp: Math.round(totalKwp) };
   }, [buildings, leads]);
@@ -180,7 +181,7 @@ export default function TableView() {
           <tbody>
             {rows.map((b) => {
               const lead = leads[b.id];
-              const kwp  = lead?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+              const kwp  = getRealKwp(b, obstacles[b.id]);
               const name = b.name ?? b.operator ?? `Way ${b.osmId ?? b.id.slice(0, 8)}`;
               const selected = selectionIds.includes(b.id);
 

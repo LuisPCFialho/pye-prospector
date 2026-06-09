@@ -3,6 +3,7 @@ import type {
   BuildingFeature, Lead, LeadNote,
   SolarStatus, PipelineStage,
 } from "../types/building";
+import { clearPackingCache as clearPackingCacheStore } from "../lib/roofPacking";
 
 export type ViewMode = "map" | "table";
 export type DrawMode = "none" | "polygon" | "obstacle";
@@ -148,6 +149,8 @@ export const useAppStore = create<AppState>((set) => ({
   addBuildings: (b) =>
     set((s) => {
       const existing = new Set(s.buildings.map((x) => x.id));
+      // Invalidate packing cache for re-imported buildings (geometry may have changed)
+      b.forEach((x) => { if (existing.has(x.id)) clearPackingCacheStore(x.id); });
       return { buildings: [...s.buildings, ...b.filter((x) => !existing.has(x.id))] };
     }),
 

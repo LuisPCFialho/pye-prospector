@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useAppStore } from "../store/appStore";
 import type { BuildingFeature, Lead } from "../types/building";
-import { estimatePeakPower } from "../lib/pvgis";
+import { getRealKwp } from "../lib/roofPacking";
 
 /**
  * Returns the subset of buildings that pass all active filters.
@@ -23,6 +23,8 @@ export function useFilteredBuildings(): BuildingFeature[] {
   const filterOnlyDropped   = useAppStore((s) => s.filterOnlyDropped);
   const filterExcludeDropped = useAppStore((s) => s.filterExcludeDropped);
 
+  const obstacles = useAppStore((s) => s.obstacles);
+
   return useMemo(() => {
     const kw = filterKeyword.toLowerCase();
     return buildings.filter((b) => {
@@ -34,7 +36,7 @@ export function useFilteredBuildings(): BuildingFeature[] {
       if (filterMaxAreaSqm > 0 && b.areaSqm > filterMaxAreaSqm) return false;
 
       if (filterMinKwp > 0 || filterMaxKwp > 0) {
-        const kwp = lead?.estimatedKwp ?? estimatePeakPower(b.areaSqm);
+        const kwp = getRealKwp(b, obstacles[b.id]);
         if (filterMinKwp > 0 && kwp < filterMinKwp) return false;
         if (filterMaxKwp > 0 && kwp > filterMaxKwp) return false;
       }
@@ -58,6 +60,7 @@ export function useFilteredBuildings(): BuildingFeature[] {
     filterMinKwp, filterMaxKwp,
     filterKeyword,
     filterOnlyFlagged, filterOnlyDropped, filterExcludeDropped,
+    obstacles,
   ]);
 }
 

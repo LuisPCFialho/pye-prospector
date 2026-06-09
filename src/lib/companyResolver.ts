@@ -9,6 +9,7 @@ import type { BuildingFeature, CompanyCandidate } from "../types/building";
 import { reverseGeocode, looksLikeBusiness, type ReverseGeocodeResult } from "./nominatim";
 import { findNearbyBusinesses, normalizeName } from "./companyLookup";
 import { lookupCompanyWithGemini } from "./gemini";
+import { isValidNif } from "./validation";
 
 export interface ResolveResult {
   candidates: CompanyCandidate[];
@@ -82,12 +83,17 @@ export async function resolveCompany(building: BuildingFeature): Promise<Resolve
     });
   }
 
-  // Merge: sort by score desc, dedupe by normalized name (merge fields)
+  // Boost score for candidates with a validated NIF — strongest identity signal
+  for (const c of candidates) {
+    if (c.nif && isValidNif(c.nif)) c.score += 0.5;
+  }
+
+  // Merge: sort by score desc, dedupe by NIF (when valid) or normalized name
   candidates.sort((a, b) => b.score - a.score);
   const merged: CompanyCandidate[] = [];
   const seen = new Map<string, CompanyCandidate>();
   for (const c of candidates) {
-    const key = c.nif || normalizeName(c.name);
+    const key = (c.nif && isValidNif(c.nif)) ? c.nif : normalizeName(c.name);
     if (!key) continue;
     const existing = seen.get(key);
     if (existing) {

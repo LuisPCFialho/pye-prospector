@@ -8,7 +8,8 @@ import { buildingsToGeoJSON } from "../lib/overpass";
 import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
 import { useFilteredBuildings, useIsFilterActive } from "../hooks/useFilteredBuildings";
-import { getRoofPacking, clearPackingCache } from "../lib/roofPacking";
+import { getRoofPacking, clearPackingCache, getRealKwp } from "../lib/roofPacking";
+import { safeLocalStorage } from "../lib/safeLocalStorage";
 import { BUILDING_USE_LABELS } from "../types/building";
 import * as turf from "@turf/turf";
 
@@ -35,10 +36,15 @@ const DRAW_SOURCE = "draw-polygon";
 const PANELS_SOURCE = "panels";
 const OBSTACLES_SOURCE = "obstacles";
 
-/** Zoom at which individual buildings are large enough to label with kWp. */
-const LABEL_MIN_ZOOM = 16;
-/** Cap on simultaneous kWp markers to keep pan/zoom smooth. */
-const MAX_LABELS = 60;
+/** Zoom at which kWp labels appear. Lower = see more roofs at once. */
+const LABEL_MIN_ZOOM = 13;
+/** Per-zoom label caps — lower zoom shows fewer (only high-kWp), higher zoom shows more. */
+function maxLabelsAtZoom(zoom: number): number {
+  if (zoom >= 16) return 80;
+  if (zoom >= 15) return 50;
+  if (zoom >= 14) return 30;
+  return 20; // z13 — only highest kWp per area
+}
 
 function addAppLayers(map: maplibregl.Map) {
   if (map.getSource(BUILDINGS_SOURCE)) return;
@@ -219,16 +225,16 @@ export default function MapView() {
     // Restore last view from localStorage
     let initialCenter: [number, number] = [config.defaultCenter.lon, config.defaultCenter.lat];
     let initialZoom = config.defaultZoom;
-    try {
-      const saved = localStorage.getItem("pye:mapview");
-      if (saved) {
-        const v = JSON.parse(saved) as { lon: number; lat: number; zoom: number };
+    const savedView = safeLocalStorage.get("pye:mapview");
+    if (savedView) {
+      try {
+        const v = JSON.parse(savedView) as { lon: number; lat: number; zoom: number };
         if (Number.isFinite(v.lon) && Number.isFinite(v.lat) && Number.isFinite(v.zoom)) {
           initialCenter = [v.lon, v.lat];
           initialZoom = v.zoom;
         }
-      }
-    } catch { /* ignore */ }
+      } catch { /* ignore corrupt data */ }
+    }
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -244,9 +250,7 @@ export default function MapView() {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         const c = map.getCenter();
-        try {
-          localStorage.setItem("pye:mapview", JSON.stringify({ lon: c.lng, lat: c.lat, zoom: map.getZoom() }));
-        } catch { /* quota exceeded */ }
+        safeLocalStorage.set("pye:mapview", JSON.stringify({ lon: c.lng, lat: c.lat, zoom: map.getZoom() }));
         saveTimer = null;
       }, 500);
     };
@@ -358,13 +362,34 @@ export default function MapView() {
       const closed = [...coords, coords[0]];
       const poly   = turf.polygon([closed]);
 
-      // Obstacle mode: store the exclusion zone on the selected building and re-pack
+      // Obstacle mode: validate + store the exclusion zone, then re-pack
       if (mode === "obstacle") {
         clearDraw(map);
         setDrawMode("none");
         map.getCanvas().style.cursor = "";
         const sel = useAppStore.getState().selectedBuildingId;
         if (!sel) { notify("Seleciona um edifício antes de marcar obstáculos.", "warning"); return; }
+        const building = useAppStore.getState().buildings.find((x) => x.id === sel);
+        if (building) {
+          const roofPoly = building.geometryGeoJSON.type === "Polygon"
+            ? turf.feature(building.geometryGeoJSON as GeoJSON.Polygon)
+            : turf.feature({ type: "Polygon", coordinates: (building.geometryGeoJSON as GeoJSON.MultiPolygon).coordinates[0] });
+          const obsArea = turf.area(poly);
+          const roofArea = turf.area(roofPoly);
+          const intersection = turf.intersect(turf.featureCollection([roofPoly, poly]));
+          const overlapRatio = intersection ? turf.area(intersection) / obsArea : 0;
+          if (overlapRatio < 0.5) {
+            notify("O obstáculo está maioritariamente fora do telhado — redesenha dentro da cobertura.", "warning");
+            return;
+          }
+          if (obsArea < 4) {
+            notify("Obstáculo demasiado pequeno (mín. 4 m²).", "warning");
+            return;
+          }
+          if (obsArea > roofArea * 0.6) {
+            notify("Obstáculo cobre mais de 60% do telhado — confirma o desenho.", "warning");
+          }
+        }
         addObstacle(sel, poly.geometry);
         clearPackingCache(sel);
         notify("Obstáculo marcado — kWp recalculado.", "success");
@@ -485,32 +510,37 @@ export default function MapView() {
   }, [selectedBuildingId, showPanels, buildings, obstacles]);
 
   // kWp labels on the map (DOM markers — style-independent, survive setStyle).
-  // Bounded to buildings in view at high zoom and capped for smooth pan/zoom.
+  // Shows down to zoom 13; at lower zooms only the highest-kWp roofs in view
+  // are labelled (zoom-tiered cap) so the map stays readable.
   const refreshLabels = useCallback(() => {
     const map = mapRef.current;
     const markers = labelMarkersRef.current;
     if (!map) return;
-    if (!showLabels || map.getZoom() < LABEL_MIN_ZOOM) {
+    const zoom = map.getZoom();
+    if (!showLabels || zoom < LABEL_MIN_ZOOM) {
       markers.forEach((m) => m.remove());
       markers.clear();
       return;
     }
+    const cap = maxLabelsAtZoom(zoom);
     const bounds = map.getBounds();
     const all = useAppStore.getState().buildings;
     const obs = useAppStore.getState().obstacles;
-    const keep = new Set<string>();
-    let count = 0;
-    for (const b of all) {
-      if (count >= MAX_LABELS) break;
-      if (!bounds.contains([b.centroidLon, b.centroidLat])) continue;
-      let kwp = 0;
-      try {
+
+    // Compute kWp for in-view buildings, then show the top-N by value
+    const inView = all
+      .filter((b) => bounds.contains([b.centroidLon, b.centroidLat]))
+      .map((b) => {
         const o = obs[b.id];
-        kwp = getRoofPacking(b, undefined, o?.length ? o : undefined).result.kwpDerated;
-      } catch { kwp = 0; }
-      if (kwp <= 0) { const m = markers.get(b.id); if (m) { m.remove(); markers.delete(b.id); } continue; }
-      count++;
-      keep.add(b.id);
+        const kwp = getRealKwp(b, o);
+        return { b, kwp };
+      })
+      .filter((x) => x.kwp > 0)
+      .sort((a, z) => z.kwp - a.kwp)
+      .slice(0, cap);
+
+    const keep = new Set(inView.map((x) => x.b.id));
+    for (const { b, kwp } of inView) {
       const text = `${kwp >= 100 ? Math.round(kwp) : kwp.toFixed(1)} kWp`;
       const existing = markers.get(b.id);
       if (existing) {
@@ -567,11 +597,7 @@ export default function MapView() {
       const id = f.properties?.id as string | undefined;
       const b = id ? useAppStore.getState().buildings.find((x) => x.id === id) : undefined;
       if (!b) { popup.remove(); return; }
-      let kwp = 0;
-      try {
-        const o = useAppStore.getState().obstacles[b.id];
-        kwp = getRoofPacking(b, undefined, o?.length ? o : undefined).result.kwpDerated;
-      } catch { kwp = 0; }
+      const kwp = getRealKwp(b, useAppStore.getState().obstacles[b.id]);
       const label = b.name ?? (b.inferredUse ? BUILDING_USE_LABELS[b.inferredUse] : "Edifício");
       const kwpText = kwp >= 100 ? Math.round(kwp).toString() : kwp.toFixed(1);
       popup
@@ -633,17 +659,20 @@ export default function MapView() {
         </div>
       )}
 
-      {/* Filter-active badge: shows how many buildings are hidden */}
+      {/* Filter chip — always visible when active, with inline reset */}
       {isFilterActive && totalBuildings > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowSearchFilter(true)}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-[#f97316]/90 hover:bg-[#f97316] text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg transition-colors"
-          title="Filtro activo — clica para editar"
-        >
-          <Filter size={11} />
-          {visibleBuildings.length}/{totalBuildings} edifícios visíveis
-        </button>
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-[#13131f]/95 border border-[#f97316] rounded-full shadow-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowSearchFilter(true)}
+            className="flex items-center gap-1.5 text-[#f97316] text-xs font-semibold px-3 py-1.5 hover:bg-[#f97316]/10 transition-colors"
+            title="Filtro activo — clica para editar"
+          >
+            <Filter size={11} />
+            {visibleBuildings.length}/{totalBuildings} edifícios
+          </button>
+          <ResetFiltersButton />
+        </div>
       )}
 
       {/* Multi-selection badge → opens Table for bulk ops */}
@@ -834,5 +863,34 @@ function clearDraw(map: maplibregl.Map) {
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c),
+  );
+}
+
+/** One-click "clear all filters" button rendered inside the filter chip. */
+function ResetFiltersButton() {
+  const resetAll = useAppStore((s) => s.setFilterSolarStatus);
+  const s = useAppStore.getState();
+  function reset() {
+    s.setFilterSolarStatus("all");
+    s.setFilterPipelineStage("all");
+    s.setFilterMinAreaSqm(0);
+    s.setFilterMaxAreaSqm(0);
+    s.setFilterMinKwp(0);
+    s.setFilterMaxKwp(0);
+    s.setFilterKeyword("");
+    s.setFilterOnlyFlagged(false);
+    s.setFilterOnlyDropped(false);
+    s.setFilterExcludeDropped(false);
+  }
+  void resetAll; // consumed via closure
+  return (
+    <button
+      type="button"
+      onClick={reset}
+      className="px-2 py-1.5 text-[#8892a4] hover:text-white hover:bg-[#ef4444]/20 text-xs transition-colors border-l border-[#f97316]/40"
+      title="Limpar todos os filtros"
+    >
+      ✕
+    </button>
   );
 }

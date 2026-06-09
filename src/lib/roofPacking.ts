@@ -55,3 +55,20 @@ export function clearPackingCache(id?: string): void {
   if (id) cache.delete(id);
   else cache.clear();
 }
+
+/**
+ * Single source of truth for the kWp figure shown everywhere in the app
+ * (map labels, hover tooltip, table column, filters, side panel).
+ * Always uses obstacle-aware packing so every view is consistent.
+ */
+export function getRealKwp(
+  b: BuildingFeature,
+  obstacles?: GeoJSON.Polygon[],
+): number {
+  try {
+    return getRoofPacking(b, undefined, obstacles?.length ? obstacles : undefined)
+      .result.kwpDerated;
+  } catch {
+    return 0;
+  }
+}
