@@ -4,6 +4,7 @@ import type {
   BuildingFeature, Lead, LeadNote, SolarStatus, PipelineStage, BuildingUse, DropReason,
   Territory, LeadContact, LeadActivity, ActivityType,
 } from "../types/building";
+import { csvCell } from "../lib/csv";
 
 type DB = Awaited<ReturnType<typeof Database.load>>;
 let _db: DB | null = null;
@@ -461,11 +462,7 @@ export async function exportLeadsCSV(): Promise<string> {
   ].join(",");
 
   // RFC 4180 quoting + formula-injection neutralization (prefix \t on = + - @).
-  const cell = (v: unknown): string => {
-    let s = v == null ? "" : String(v);
-    if (/^[=+\-@\t\r]/.test(s)) s = `\t${s}`;
-    return `"${s.replace(/"/g, '""')}"`;
-  };
+  const cell = csvCell;
 
   const lines = rows.map((r) =>
     [

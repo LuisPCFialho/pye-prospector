@@ -7,9 +7,15 @@ import { invoke } from "@tauri-apps/api/core";
  * Falls back to window.open() in the browser dev environment.
  */
 /** Allow only http/https URLs; reject javascript:/file:/data: and malformed input. */
-function sanitizeUrl(raw: string): string | null {
+export function sanitizeUrl(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  // Only prepend a scheme when the input has none. An EXPLICIT scheme must be
+  // http/https — otherwise prepending https:// would silently rewrite a
+  // dangerous scheme (file:/javascript:/data:) into a passing https URL.
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(v);
   try {
-    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const u = new URL(hasScheme ? v : `https://${v}`);
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     return u.href;
   } catch {

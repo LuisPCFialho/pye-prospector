@@ -70,7 +70,7 @@ export default function LocationDetails() {
         monthlyKwh: result.monthlyAverageKwh,
         updatedAt: new Date().toISOString(),
       };
-      try { await saveLead(updated); } catch {}
+      try { await saveLead(updated); } catch { /* browser/dev — DB unavailable */ }
       upsertLead(updated);
       notify(
         `${(result.yearlyEnergyKwh / 1000).toFixed(1)} MWh/ano · ${result.specificYield} kWh/kWp · ${result.tilt}°${useOptimal ? " (ótimo)" : ""}` +

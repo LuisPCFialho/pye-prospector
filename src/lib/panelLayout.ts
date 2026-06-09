@@ -227,10 +227,14 @@ function fillGrid(
 ): GeoJSON.Feature<GeoJSON.Polygon>[] {
   // Rotate the work polygon into the module frame to get an axis-aligned bbox
   const ctrM: [number, number] = [0, 0]; // projector pivot is the centroid
-  const ringsM: [number, number][][] =
+  // Include ALL rings (outer + holes). turf.difference cuts obstacles as interior
+  // hole rings; the even-odd test below then correctly excludes points inside them.
+  // (Using only the outer ring would silently ignore interior obstacles.)
+  const ringList: number[][][] =
     work.geometry.type === "MultiPolygon"
-      ? (work.geometry.coordinates as number[][][][]).map((p) => p[0].map((c) => proj.to(c)))
-      : [(work.geometry as GeoJSON.Polygon).coordinates[0].map((c) => proj.to(c))];
+      ? (work.geometry.coordinates as number[][][][]).flatMap((p) => p)
+      : (work.geometry as GeoJSON.Polygon).coordinates;
+  const ringsM: [number, number][][] = ringList.map((r) => r.map((c) => proj.to(c)));
 
   const rotRings = ringsM.map((r) => r.map(([x, y]) => rot(x - ctrM[0], y - ctrM[1], -theta)));
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

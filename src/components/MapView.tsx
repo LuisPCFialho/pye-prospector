@@ -288,14 +288,17 @@ export default function MapView() {
     setMapInstance(map);
     mapRef.current = map;
 
+    // Capture the (stable) markers Map so the cleanup doesn't read a ref that
+    // could have changed identity (it can't here, but keeps the linter happy).
+    const markers = labelMarkersRef.current;
     return () => {
       if (saveTimer) clearTimeout(saveTimer);
-      labelMarkersRef.current.forEach((m) => m.remove());
-      labelMarkersRef.current.clear();
+      markers.forEach((m) => m.remove());
+      markers.clear();
       map.remove();
       mapRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Click handler
   const handleMapClick = useCallback(
@@ -392,7 +395,7 @@ export default function MapView() {
         setLoadingBuildings(false);
       }
     },
-    [addBuildings, setLeads, setDrawMode, setLoadingBuildings, notify, addObstacle],
+    [addBuildings, setLeads, setDrawMode, setLoadingBuildings, setLoadError, notify, addObstacle],
   );
 
   // ESC to cancel draw — only acts when draw mode is actually active
