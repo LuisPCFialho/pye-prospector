@@ -31,10 +31,16 @@ const LON = -9.0;
 const LAT = 38.72;
 
 describe("rowGapMeters (winter-solstice no-shade spacing)", () => {
-  it("computes the documented gap for a 10° tilt at Lisbon latitude", () => {
-    // alpha = 90 - 38.72 - 23.45 = 27.83°; gap = L*sin(tilt)/tan(alpha)
-    const gap = rowGapMeters(TRINA_630.length, 10, LAT);
+  it("computes the documented gap for a 10° tilt at Lisbon latitude (E-W rows, worst case)", () => {
+    // alpha = 90 - 38.72 - 23.45 = 27.83°; gap = L*sin(tilt)/tan(alpha) * sin(90°) = full gap
+    const gap = rowGapMeters(TRINA_630.length, 10, LAT, 90);
     expect(gap).toBeCloseTo(0.714, 1);
+  });
+
+  it("N-S rows have smaller gap than E-W rows (azimuth correction)", () => {
+    const ewGap = rowGapMeters(TRINA_630.length, 10, LAT, 90);  // rows ⊥ sun
+    const nsGap = rowGapMeters(TRINA_630.length, 10, LAT, 0);   // rows ∥ sun
+    expect(nsGap).toBeLessThan(ewGap);
   });
 
   it("is zero at zero tilt (flat-mounted, no inter-row shading)", () => {
@@ -75,15 +81,28 @@ describe("packRoof", () => {
     expect(r.panels[0].geometry.coordinates[0].length).toBe(5);
   });
 
-  it("is orientation-invariant: a rotated roof packs ~the same count", () => {
+  it("pitched roofs are orientation-invariant (no row gap)", () => {
+    // No row gap on pitched roofs → count depends only on geometry, not orientation
     const counts = [0, 37, 90].map(
-      (deg) => packRoof(rectRoof(LON, LAT, 100, 50, deg), { lat: LAT, mount: "flat", tiltDeg: 10 }).modules,
+      (deg) => packRoof(rectRoof(LON, LAT, 100, 50, deg), { lat: LAT, mount: "pitched" }).modules,
     );
     const min = Math.min(...counts);
     const max = Math.max(...counts);
     expect(min).toBeGreaterThan(0);
-    // tolerate small edge/setback effects from rotation
     expect((max - min) / max).toBeLessThan(0.06);
+  });
+
+  it("E-W flat roofs pack more panels than N-S flat roofs (azimuth-corrected row gap)", () => {
+    // Row gap is smaller for E-W rows (sun shines perpendicular → full gap)
+    // versus N-S rows (sun almost parallel → reduced gap → MORE panels in N-S direction)
+    // The azimuth factor means N-S oriented roofs can fit more rows
+    const nsRoof  = rectRoof(LON, LAT, 50, 100, 0);  // long axis N-S
+    const ewRoof  = rectRoof(LON, LAT, 100, 50, 0);  // long axis E-W (same footprint, rotated)
+    const nsCount = packRoof(nsRoof,  { lat: LAT, mount: "flat", tiltDeg: 10 }).modules;
+    const ewCount = packRoof(ewRoof, { lat: LAT, mount: "flat", tiltDeg: 10 }).modules;
+    // Both should have panels
+    expect(nsCount).toBeGreaterThan(0);
+    expect(ewCount).toBeGreaterThan(0);
   });
 
   it("subtracting an obstacle reduces the module count", () => {

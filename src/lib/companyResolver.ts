@@ -10,6 +10,7 @@ import { reverseGeocode, looksLikeBusiness, type ReverseGeocodeResult } from "./
 import { findNearbyBusinesses, normalizeName } from "./companyLookup";
 import { lookupCompanyWithGemini } from "./gemini";
 import { isValidNif } from "./validation";
+import { getCompanyCache, setCompanyCache } from "../db/database";
 
 export interface ResolveResult {
   candidates: CompanyCandidate[];
@@ -24,8 +25,17 @@ export function getCachedResolve(buildingId: string): ResolveResult | undefined 
 }
 
 export async function resolveCompany(building: BuildingFeature): Promise<ResolveResult> {
+  // 1. In-memory cache (session)
   const cached = cache.get(building.id);
   if (cached) return cached;
+
+  // 2. SQLite cache (survives restarts, 7-day TTL)
+  const dbCached = await getCompanyCache(building.id).catch(() => null);
+  if (dbCached) {
+    const result = dbCached as ResolveResult;
+    cache.set(building.id, result);
+    return result;
+  }
 
   // 1. Reverse-geocode first
   const geo = await reverseGeocode(building.centroidLat, building.centroidLon).catch(() => null);
@@ -111,5 +121,6 @@ export async function resolveCompany(building: BuildingFeature): Promise<Resolve
 
   const result: ResolveResult = { candidates: merged, address, geo: geo ?? undefined };
   cache.set(building.id, result);
+  void setCompanyCache(building.id, result); // persist to SQLite (non-blocking)
   return result;
 }

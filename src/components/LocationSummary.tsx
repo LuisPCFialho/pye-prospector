@@ -9,6 +9,7 @@ import { resolveCompany, getCachedResolve } from "../lib/companyResolver";
 import { validateField } from "../lib/validation";
 import { scoreLead, scoreColor } from "../lib/leadScore";
 import { getRoofPacking } from "../lib/roofPacking";
+import { detectSolarFromMapillary } from "../lib/mapillary";
 import type { CompanyCandidate, Lead } from "../types/building";
 
 type Tab = "flag" | "solar" | "drop";
@@ -41,6 +42,7 @@ export default function LocationSummary() {
   const [editValue, setEditValue]        = useState("");
   const [candidates, setCandidates]      = useState<CompanyCandidate[]>([]);
   const [loadingLookup, setLoadingLookup] = useState(false);
+  const [mapillaryPvHint, setMapillaryPvHint] = useState<"possible" | null>(null);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
@@ -83,6 +85,18 @@ export default function LocationSummary() {
     if (!building) { setCandidates([]); return; }
     const cached = getCachedResolve(building.id);
     setCandidates(cached?.candidates ?? []);
+  }, [building?.id]);
+
+  // Background Mapillary PV hint — only fires for unknown solarStatus + has token
+  useEffect(() => {
+    setMapillaryPvHint(null);
+    if (!building) return;
+    const currentLead = leads[building.id];
+    if (currentLead?.solarStatus !== "unknown" && currentLead?.solarStatus !== undefined) return;
+    detectSolarFromMapillary(building.centroidLat, building.centroidLon)
+      .then((hint) => setMapillaryPvHint(hint))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [building?.id]);
 
   if (!showLocationSummary || !building) return null;
@@ -129,13 +143,16 @@ export default function LocationSummary() {
     if (!building) return;
     setCalcing(true);
     try {
-      // Use packed kWp + real roof tilt/azimuth for an accurate estimate
+      // For flat roofs ask PVGIS for the optimal tilt+azimuth (free optimization).
+      // For pitched roofs use the real roof orientation (fixed by geometry).
+      const isFlat = packing.roof.mount === "flat";
       const result = await fetchPVGIS({
         lat: building.centroidLat,
         lon: building.centroidLon,
         peakPowerKwp: kwp,
-        angle: packing.roof.tiltDeg,
-        aspect: packing.roof.azimuthDeg,
+        angle: isFlat ? undefined : packing.roof.tiltDeg,
+        aspect: isFlat ? undefined : packing.roof.azimuthDeg,
+        optimal: isFlat,
       });
       const updated = {
         ...ensureLead(),
@@ -268,11 +285,17 @@ export default function LocationSummary() {
               </div>
             )}
 
-            {/* Existing PV detection badge */}
+            {/* Existing PV detection badges */}
             {hasSolarOnOSM(building) && (
               <div className="flex items-center gap-1.5 text-[11px] text-green-400 bg-green-900/20 border border-green-700/40 rounded px-2 py-1">
                 <span>☀️</span>
                 <span>PV detetado no OSM — edifício já tem painéis</span>
+              </div>
+            )}
+            {!hasSolarOnOSM(building) && mapillaryPvHint === "possible" && (
+              <div className="flex items-center gap-1.5 text-[11px] text-yellow-400 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
+                <span>🔍</span>
+                <span>Possível PV visível no Street View (baixa confiança — confirma manualmente)</span>
               </div>
             )}
 
@@ -347,16 +370,29 @@ export default function LocationSummary() {
                   <button
                     key={`${c.source}-${c.name}-${i}`}
                     type="button"
-                    title={c.sourceUrl ? `Fonte: ${c.sourceUrl}` : `Fonte: ${SOURCE_LABEL[c.source]}`}
+                    title={c.sourceUrl ? `Fonte: ${c.sourceUrl}` : `Fonte: ${SOURCE_LABEL[c.source]} — confiança ${c.score.toFixed(1)}/4`}
                     onClick={() => applyCandidate(c)}
                     className="w-full flex items-center gap-2 px-2 py-1 rounded border border-[#2a2b3d] bg-[#1e1f30] hover:border-[#f97316]/40 hover:bg-[#f97316]/10 text-left transition-all"
                   >
+                    {/* Source badge */}
                     <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-[#2a2b3d] text-[#8892a4] shrink-0">
                       {SOURCE_LABEL[c.source]}
                     </span>
                     <span className="flex-1 text-[11px] text-[#c8d0df] truncate">{c.name}</span>
-                    {c.distanceM != null && c.distanceM > 0 && (
-                      <span className="text-[9px] text-[#4a5160] shrink-0">{c.distanceM}m</span>
+                    {/* NIF verified badge */}
+                    {c.nif && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-[#1e3a8a]/60 text-[#60a5fa] shrink-0" title={`NIF: ${c.nif}`}>
+                        NIF ✓
+                      </span>
+                    )}
+                    {/* Confidence score dot */}
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: c.score >= 3.5 ? "#22c55e" : c.score >= 2 ? "#eab308" : "#94a3b8" }}
+                      title={`Confiança: ${c.score.toFixed(1)}/4`}
+                    />
+                    {i === 0 && (
+                      <span className="text-[9px] text-[#f97316] shrink-0">✓ top</span>
                     )}
                   </button>
                 ))}

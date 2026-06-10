@@ -70,6 +70,12 @@ pub fn run() {
             sql: include_str!("../migrations/0005_indexes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "company_cache",
+            sql: include_str!("../migrations/0006_company_cache.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -29,7 +29,10 @@ export function getRoofPacking(
   if (!obstacles && cache.has(b.id)) return cache.get(b.id)!;
 
   const roof = inferRoof(b);
-  const derate = OBSTACLE_DERATE[b.inferredUse ?? "other"] ?? 0.88;
+  // When the user has drawn explicit obstacles they are subtracted geometrically
+  // (turf.difference), so the panel count already reflects the real usable area.
+  // Only apply the use-based flat derate when no drawn obstacles exist (inferred clutter).
+  const derate = obstacles?.length ? 1 : (OBSTACLE_DERATE[b.inferredUse ?? "other"] ?? 0.88);
   const packOpts = { module, mount: roof.mount, tiltDeg: roof.tiltDeg, lat: b.centroidLat, setbackM: 1.0, obstacles, obstacleDerate: derate };
 
   // Pack every sub-polygon in a MultiPolygon and sum — disjoint roof sections

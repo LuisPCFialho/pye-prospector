@@ -478,3 +478,33 @@ export async function exportLeadsCSV(): Promise<string> {
 
   return [header, ...lines].join("\n");
 }
+
+// ── Company resolution SQLite cache (7-day TTL) ───────────────────────────────
+
+const COMPANY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export async function getCompanyCache(buildingId: string): Promise<unknown | null> {
+  try {
+    const db = await getDB();
+    const rows = await db.select<{ payload: string; cached_at: string }[]>(
+      "SELECT payload, cached_at FROM company_cache WHERE building_id = ?", [buildingId],
+    );
+    if (!rows.length) return null;
+    const age = Date.now() - new Date(rows[0].cached_at).getTime();
+    if (age > COMPANY_CACHE_TTL_MS) {
+      await db.execute("DELETE FROM company_cache WHERE building_id = ?", [buildingId]);
+      return null;
+    }
+    return JSON.parse(rows[0].payload);
+  } catch { return null; }
+}
+
+export async function setCompanyCache(buildingId: string, result: unknown): Promise<void> {
+  try {
+    const db = await getDB();
+    await db.execute(
+      "INSERT OR REPLACE INTO company_cache (building_id, payload, cached_at) VALUES (?, ?, ?)",
+      [buildingId, JSON.stringify(result), new Date().toISOString()],
+    );
+  } catch { /* non-critical */ }
+}

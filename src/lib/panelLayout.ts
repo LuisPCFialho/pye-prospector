@@ -54,7 +54,11 @@ export interface PackResult {
   modules: number;
   /** Installed DC power, kWp (modules * Wp / 1000). */
   kwp: number;
-  /** Headline kWp after obstacle derate (what to show the user). */
+  /**
+   * Headline kWp after derate for inferred invisible clutter (HVAC/vents).
+   * When user-drawn obstacles are present, the obstacle geometry is already
+   * subtracted exactly so kwpDerated == kwp (no additional flat derate applied).
+   */
   kwpDerated: number;
   /** Ground coverage ratio used. */
   gcr: number;
@@ -113,13 +117,39 @@ function ringToMeters(coords: number[][], proj: ReturnType<typeof projector>): [
   return coords.map((c) => proj.to(c));
 }
 
-/** Winter-solstice no-shade row gap for a flat-roof tilted array. */
-export function rowGapMeters(panelSlopeLen: number, tiltDeg: number, lat: number): number {
+/**
+ * Winter-solstice no-shade row gap for a flat-roof tilted array.
+ *
+ * rowBearingDeg: compass bearing of the row direction (0 = N-S rows, 90 = E-W rows).
+ * At winter solstice in Portugal the sun azimuth at noon is ~180° (due south); for
+ * rows running E-W (90°/270°) the shadow is cast perpendicular to the row axis, which
+ * is the worst case and matches the classic formula. For rows running N-S (0°/180°) the
+ * solar azimuth is parallel to the rows, so shading is minimal — we apply a cosine
+ * correction proportional to how perpendicular the row axis is to the solar azimuth.
+ */
+export function rowGapMeters(
+  panelSlopeLen: number,
+  tiltDeg: number,
+  lat: number,
+  rowBearingDeg = 90,
+): number {
   const tilt = (tiltDeg * Math.PI) / 180;
   // Solar elevation at winter-solstice solar noon: 90 - lat - 23.45
   const alpha = ((90 - lat - 23.45) * Math.PI) / 180;
   if (alpha <= 0) return panelSlopeLen; // polar safety
-  return (panelSlopeLen * Math.sin(tilt)) / Math.tan(alpha);
+
+  // Winter-solstice solar azimuth at noon ≈ 180° (due south) in Portugal
+  // The effective shading gap scales with |sin(angle_between_row_axis_and_sun)|
+  const solarAzimuth = 180;
+  const angleDiff = ((rowBearingDeg - solarAzimuth + 360) % 360); // 0–360
+  // Smallest angle between the two directions (0–180)
+  const normalized = Math.min(angleDiff, 360 - angleDiff);
+  const phi = normalized * (Math.PI / 180);
+  // |sin(phi)|: 1 when row ⊥ sun (E-W rows, bearing=90, worst case)
+  //             0 when row ∥ sun (N-S rows, bearing=0, minimal shadow)
+  const azimuthFactor = Math.max(0.15, Math.abs(Math.sin(phi))); // floor at 0.15 for N-S rows
+
+  return (panelSlopeLen * Math.sin(tilt)) / Math.tan(alpha) * azimuthFactor;
 }
 
 /**
@@ -191,9 +221,12 @@ export function packRoof(roof: GeoJSON.Polygon, opts: PackOptions): PackResult {
     slope: module.width,
   });
 
+  // Row bearing from dominant angle (0°=N, 90°=E) for azimuth-corrected row gap
+  const rowBearingDeg = Math.round(((90 - (theta * 180) / Math.PI) % 360 + 360) % 360);
+
   let best: PackResult | null = null;
   for (const v of variants) {
-    const rowGap = mount === "flat" ? rowGapMeters(v.slope, tiltDeg, opts.lat) : 0;
+    const rowGap = mount === "flat" ? rowGapMeters(v.slope, tiltDeg, opts.lat, rowBearingDeg) : 0;
     const stepY = v.depth + rowGap;
     const stepX = v.w;
     const panels = fillGrid(work, proj, theta, stepX, stepY, v.w - colGap, v.depth);

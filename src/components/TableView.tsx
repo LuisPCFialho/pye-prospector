@@ -1,12 +1,13 @@
-import { useState, useMemo } from "react";
-import { ArrowUpDown, ExternalLink, Sun, Flag, X } from "lucide-react";
+import { useState, useMemo, useRef } from "react";
+import { ArrowUpDown, ExternalLink, Sun, Flag, X, Download } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { exportLeadsCSV, bulkSetStage, bulkSetFlag, getAllLeads } from "../db/database";
 import { SOLAR_STATUS_COLORS, PIPELINE_COLORS, PIPELINE_LABELS, type PipelineStage } from "../types/building";
 import { getDisplayCompany, getDisplayWebsite } from "../lib/leadAutoFill";
-import { scoreColor } from "../lib/leadScore";
+import { scoreColor, scoreLead } from "../lib/leadScore";
 import { useFilteredBuildings } from "../hooks/useFilteredBuildings";
-import { getRealKwp } from "../lib/roofPacking";
+import { getRealKwp, getRoofPacking } from "../lib/roofPacking";
+import type { BuildingFeature, Lead } from "../types/building";
 
 type SortKey = "name" | "area" | "kwp" | "company" | "pipeline" | "score";
 
@@ -56,6 +57,45 @@ export default function TableView() {
     }
   }
 
+  async function handleExportPanelLayouts() {
+    const allBuildings = useAppStore.getState().buildings;
+    const obs = useAppStore.getState().obstacles;
+    const selected = allBuildings.filter((b) => selectionIds.includes(b.id));
+    if (!selected.length) { notify("Seleciona edifícios na tabela primeiro.", "warning"); return; }
+
+    // Bundle all layouts into one FeatureCollection with building metadata per feature
+    const allFeatures: GeoJSON.Feature[] = [];
+    let skipped = 0;
+    for (const b of selected) {
+      const packing = getRoofPacking(b, undefined, obs[b.id]?.length ? obs[b.id] : undefined);
+      if (!packing.result.panels.length) { skipped++; continue; }
+      packing.result.panels.forEach((f) => {
+        allFeatures.push({
+          ...f,
+          properties: {
+            ...f.properties,
+            buildingId: b.id,
+            buildingName: b.name ?? "",
+            kwpDerated: packing.result.kwpDerated,
+            modules: packing.result.modules,
+            areaSqm: b.areaSqm,
+          },
+        });
+      });
+    }
+
+    if (!allFeatures.length) { notify("Nenhum edifício selecionado tem layout calculado.", "warning"); return; }
+
+    const fc: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: allFeatures };
+    const blob = new Blob([JSON.stringify(fc, null, 2)], { type: "application/geo+json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `pye_paineis_${selected.length}edificios.geojson`; a.click();
+    URL.revokeObjectURL(url);
+    const msg = skipped > 0 ? ` (${skipped} sem layout omitidos)` : "";
+    notify(`GeoJSON exportado — ${selected.length - skipped} edifícios${msg}`, "success");
+  }
+
   // buildings already filtered by useFilteredBuildings hook; memoize the sort
   const rows = useMemo(() => buildings
     .slice()
@@ -73,7 +113,7 @@ export default function TableView() {
       }
       if (typeof va === "string") return sortDesc ? vb.toString().localeCompare(va.toString()) : va.toString().localeCompare(vb.toString());
       return sortDesc ? (vb as number) - (va as number) : (va as number) - (vb as number);
-    }), [buildings, leads, sortKey, sortDesc]);
+    }), [buildings, leads, sortKey, sortDesc, obstacles]);
 
   const stats = useMemo(() => {
     let totalArea = 0, totalKwp = 0;
@@ -82,7 +122,7 @@ export default function TableView() {
       totalKwp += getRealKwp(b, obstacles[b.id]);
     }
     return { count: buildings.length, totalArea, totalKwp: Math.round(totalKwp) };
-  }, [buildings, leads]);
+  }, [buildings, leads, obstacles]);
 
   const Th = ({ label, k }: { label: string; k?: SortKey }) => (
     <th
@@ -148,6 +188,14 @@ export default function TableView() {
             ⚑ Marcar
           </button>
           <div className="flex-1" />
+          <button
+            type="button"
+            onClick={handleExportPanelLayouts}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#1e3a8a]/60 hover:bg-[#1e3a8a] text-[#60a5fa] text-[11px] transition-colors"
+            title="Exportar layouts de painéis como GeoJSON (todos os selecionados)"
+          >
+            <Download size={11} /> GeoJSON
+          </button>
           <button type="button" onClick={clearSelection} className="text-[#8892a4] hover:text-white">Limpar</button>
         </div>
       )}
@@ -202,14 +250,9 @@ export default function TableView() {
                     />
                   </td>
 
-                  {/* Score */}
+                  {/* Score — hover shows breakdown */}
                   <td className="px-4 py-2.5">
-                    <span
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-slate-950"
-                      style={{ background: scoreColor(lead?.score ?? 0) }}
-                    >
-                      {lead?.score ?? "—"}
-                    </span>
+                    <ScoreBadge building={b} lead={lead} />
                   </td>
 
                   {/* Location Name */}
@@ -315,6 +358,38 @@ export default function TableView() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/** Score badge that shows a breakdown tooltip on hover. */
+function ScoreBadge({ building, lead }: { building: BuildingFeature; lead: Lead | undefined }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const { score, parts } = scoreLead(building, lead);
+  const displayScore = lead?.score ?? score;
+
+  return (
+    <div ref={ref} className="relative inline-block" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <span
+        className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-slate-950 cursor-default"
+        style={{ background: scoreColor(displayScore) }}
+      >
+        {displayScore}
+      </span>
+      {open && (
+        <div className="absolute left-0 bottom-full mb-1.5 z-50 w-48 bg-[#13131f] border border-[#1e1f30] rounded-lg shadow-xl p-2 pointer-events-none">
+          <div className="text-[10px] text-[#8892a4] mb-1.5 font-semibold">Score: {displayScore}/100</div>
+          {parts.map((p) => (
+            <div key={p.label} className="flex items-center justify-between text-[10px] py-0.5">
+              <span className="text-[#c8d0df]">{p.label}</span>
+              <span className={p.pts >= p.max * 0.7 ? "text-[#22c55e]" : p.pts > 0 ? "text-[#eab308]" : "text-[#4a5160]"}>
+                {p.pts}/{p.max}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

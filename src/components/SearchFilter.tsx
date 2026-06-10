@@ -1,7 +1,34 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Bookmark, BookmarkCheck } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { estimatePeakPower } from "../lib/pvgis";
+import { safeLocalStorage } from "../lib/safeLocalStorage";
+
+interface SavedFilter {
+  name: string;
+  solarStatus: string;
+  pipelineStage: string;
+  minAreaSqm: number;
+  maxAreaSqm: number;
+  minKwp: number;
+  maxKwp: number;
+  keyword: string;
+  onlyFlagged: boolean;
+  excludeDropped: boolean;
+}
+
+const PRESETS: SavedFilter[] = [
+  { name: "Não contactados >100 kWp", solarStatus: "no_panels", pipelineStage: "to_contact", minAreaSqm: 0, maxAreaSqm: 0, minKwp: 100, maxKwp: 0, keyword: "", onlyFlagged: false, excludeDropped: true },
+  { name: "Score alto (kWp >200)", solarStatus: "all", pipelineStage: "all", minAreaSqm: 0, maxAreaSqm: 0, minKwp: 200, maxKwp: 0, keyword: "", onlyFlagged: false, excludeDropped: true },
+  { name: "Em prospeção activa", solarStatus: "all", pipelineStage: "contacted", minAreaSqm: 0, maxAreaSqm: 0, minKwp: 0, maxKwp: 0, keyword: "", onlyFlagged: false, excludeDropped: false },
+  { name: "Grandes armazéns (>1000m²)", solarStatus: "no_panels", pipelineStage: "all", minAreaSqm: 1000, maxAreaSqm: 0, minKwp: 0, maxKwp: 0, keyword: "", onlyFlagged: false, excludeDropped: true },
+];
+
+function loadSavedFilters(): SavedFilter[] {
+  try {
+    return JSON.parse(safeLocalStorage.get("pye:savedFilters", "[]")) as SavedFilter[];
+  } catch { return []; }
+}
 
 export default function SearchFilter() {
   const buildings             = useAppStore((s) => s.buildings);
@@ -33,6 +60,47 @@ export default function SearchFilter() {
   const [localMax, setLocalMax]       = useState(filterMaxAreaSqm > 0 ? filterMaxAreaSqm.toString() : "");
   const [localMinKwp, setLocalMinKwp] = useState(filterMinKwp > 0 ? filterMinKwp.toString() : "");
   const [localMaxKwp, setLocalMaxKwp] = useState(filterMaxKwp > 0 ? filterMaxKwp.toString() : "");
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(loadSavedFilters);
+  const [saveName, setSaveName]         = useState("");
+
+  function applyFilter(f: SavedFilter) {
+    setFilterSolarStatus(f.solarStatus as never);
+    setFilterPipelineStage(f.pipelineStage as never);
+    setFilterMinAreaSqm(f.minAreaSqm);
+    setFilterMaxAreaSqm(f.maxAreaSqm);
+    setFilterMinKwp(f.minKwp);
+    setFilterMaxKwp(f.maxKwp);
+    setFilterKeyword(f.keyword);
+    setFilterOnlyFlagged(f.onlyFlagged);
+    setFilterExcludeDropped(f.excludeDropped);
+    setFilterOnlyDropped(false);
+    setLocalMin(f.minAreaSqm.toString());
+    setLocalMax(f.maxAreaSqm > 0 ? f.maxAreaSqm.toString() : "");
+    setLocalMinKwp(f.minKwp > 0 ? f.minKwp.toString() : "");
+    setLocalMaxKwp(f.maxKwp > 0 ? f.maxKwp.toString() : "");
+    setShowSearchFilter(false);
+  }
+
+  function saveCurrentFilter() {
+    const name = saveName.trim();
+    if (!name) return;
+    const f: SavedFilter = {
+      name, solarStatus: filterSolarStatus, pipelineStage: filterPipelineStage,
+      minAreaSqm: Number(localMin) || 0, maxAreaSqm: Number(localMax) || 0,
+      minKwp: Number(localMinKwp) || 0, maxKwp: Number(localMaxKwp) || 0,
+      keyword: filterKeyword, onlyFlagged: filterOnlyFlagged, excludeDropped: filterExcludeDropped,
+    };
+    const updated = [...savedFilters.filter((x) => x.name !== name), f];
+    setSavedFilters(updated);
+    safeLocalStorage.set("pye:savedFilters", JSON.stringify(updated));
+    setSaveName("");
+  }
+
+  function deleteSavedFilter(name: string) {
+    const updated = savedFilters.filter((x) => x.name !== name);
+    setSavedFilters(updated);
+    safeLocalStorage.set("pye:savedFilters", JSON.stringify(updated));
+  }
 
   // Count matching results
   const matchCount = buildings.filter((b) => {
@@ -182,6 +250,53 @@ export default function SearchFilter() {
               onChange={(e) => setFilterKeyword(e.target.value)}
               className="w-full h-8 bg-[#1e1f30] border border-[#2a2b3d] rounded-lg px-3 text-xs text-white placeholder-[#4a5160] focus:outline-none focus:border-[#f97316]/50"
             />
+          </section>
+
+          {/* Quick Filter Presets */}
+          <section>
+            <label className="block text-[10px] text-[#8892a4] uppercase tracking-wide mb-2">
+              Presets rápidos
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {[...PRESETS, ...savedFilters].map((f) => (
+                <div key={f.name} className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => applyFilter(f)}
+                    className="text-[10px] px-2 py-1 rounded-full bg-[#1e1f30] border border-[#2a2b3d] hover:border-[#f97316]/50 hover:bg-[#f97316]/10 text-[#c8d0df] transition-colors"
+                  >
+                    {f.name}
+                  </button>
+                  {savedFilters.some((s) => s.name === f.name) && (
+                    <button
+                      type="button"
+                      onClick={() => deleteSavedFilter(f.name)}
+                      className="text-[#4a5160] hover:text-[#ef4444] text-[10px] px-0.5"
+                      title="Remover preset"
+                    >✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="Nome do filtro para guardar…"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveCurrentFilter(); }}
+                className="flex-1 h-7 bg-[#1e1f30] border border-[#2a2b3d] rounded px-2 text-[11px] text-white placeholder-[#4a5160] focus:outline-none focus:border-[#f97316]/50"
+              />
+              <button
+                type="button"
+                onClick={saveCurrentFilter}
+                disabled={!saveName.trim()}
+                className="h-7 px-2 rounded bg-[#1e1f30] border border-[#2a2b3d] hover:border-[#f97316]/50 text-[#8892a4] hover:text-[#f97316] disabled:opacity-40 transition-colors"
+                title="Guardar filtro actual"
+              >
+                {savedFilters.some((s) => s.name === saveName.trim()) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+              </button>
+            </div>
           </section>
 
           {/* Quick Show */}
