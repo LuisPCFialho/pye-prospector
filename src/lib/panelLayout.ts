@@ -250,7 +250,7 @@ export function packRoof(roof: GeoJSON.Polygon, opts: PackOptions): PackResult {
       best = {
         modules: count,
         kwp: Math.round((count * module.wp) / 100) / 10,
-        kwpDerated: Math.round((count * module.wp * derate) / 100) / 10,
+        kwpDerated: Math.round((count * module.wp * derate * 0.7) / 100) / 10,
         gcr: Math.round(gcr * 100) / 100,
         bearingDeg: Math.round(((90 - (theta * 180) / Math.PI) % 360 + 360) % 360),
         panels,

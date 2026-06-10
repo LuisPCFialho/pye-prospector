@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
-import { Layers, Maximize2, Filter, Box, Grid3x3, Tag, Ban, Eraser } from "lucide-react";
+import { Layers, Maximize2, Filter, Box, Tag, Ban, Eraser } from "lucide-react";
 import { config } from "../config";
 import { setMapInstance } from "../lib/mapInstance";
 import { useAppStore } from "../store/appStore";
@@ -8,7 +8,7 @@ import { buildingsToGeoJSON } from "../lib/overpass";
 import { saveBuildingsBatch, getAllLeads } from "../db/database";
 import { fetchBuildingsInBBox } from "../lib/overpass";
 import { useFilteredBuildings, useIsFilterActive } from "../hooks/useFilteredBuildings";
-import { getRoofPacking, clearPackingCache, getRealKwp } from "../lib/roofPacking";
+import { clearPackingCache, getRealKwp } from "../lib/roofPacking";
 import { safeLocalStorage } from "../lib/safeLocalStorage";
 import { BUILDING_USE_LABELS } from "../types/building";
 import * as turf from "@turf/turf";
@@ -33,7 +33,6 @@ const MAPTILER_STYLE = (key: string) =>
 
 const BUILDINGS_SOURCE = "buildings";
 const DRAW_SOURCE = "draw-polygon";
-const PANELS_SOURCE = "panels";
 const OBSTACLES_SOURCE = "obstacles";
 
 /** Zoom at which kWp labels appear. Lower = see more roofs at once. */
@@ -126,24 +125,6 @@ function addAppLayers(map: maplibregl.Map) {
     },
   });
 
-  // Packed solar panels for the selected building
-  map.addSource(PANELS_SOURCE, {
-    type: "geojson",
-    data: { type: "FeatureCollection", features: [] },
-  });
-  map.addLayer({
-    id: "panels-fill",
-    type: "fill",
-    source: PANELS_SOURCE,
-    paint: { "fill-color": "#1e3a8a", "fill-opacity": 0.85 },
-  });
-  map.addLayer({
-    id: "panels-outline",
-    type: "line",
-    source: PANELS_SOURCE,
-    paint: { "line-color": "#60a5fa", "line-width": 0.4 },
-  });
-
   // Saved obstacle exclusion zones (UTAs, skylights, walls) for the selected building
   map.addSource(OBSTACLES_SOURCE, {
     type: "geojson",
@@ -191,7 +172,6 @@ export default function MapView() {
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
   const labelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [showPanels, setShowPanels] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
 
   const leads               = useAppStore((s) => s.leads);
@@ -475,8 +455,7 @@ export default function MapView() {
     if (b) map.easeTo({ center: [b.centroidLon, b.centroidLat], duration: 400 });
   }, [selectedBuildingId]);
 
-  // Draw packed panels + obstacle exclusion zones for the selected building.
-  // User-drawn obstacles are subtracted from the roof so kWp reflects real usable area.
+  // Draw obstacle exclusion zones for the selected building.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -487,7 +466,6 @@ export default function MapView() {
     const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
     if (!selectedBuildingId) {
-      setData(PANELS_SOURCE, empty);
       setData(OBSTACLES_SOURCE, empty);
       return;
     }
@@ -497,17 +475,7 @@ export default function MapView() {
       type: "FeatureCollection",
       features: obs.map((p) => ({ type: "Feature", geometry: p, properties: {} } as GeoJSON.Feature)),
     });
-
-    if (!showPanels) { setData(PANELS_SOURCE, empty); return; }
-    const b = buildings.find((x) => x.id === selectedBuildingId);
-    if (!b) { setData(PANELS_SOURCE, empty); return; }
-    try {
-      const { result } = getRoofPacking(b, undefined, obs.length ? obs : undefined);
-      setData(PANELS_SOURCE, { type: "FeatureCollection", features: result.panels });
-    } catch {
-      setData(PANELS_SOURCE, empty);
-    }
-  }, [selectedBuildingId, showPanels, buildings, obstacles]);
+  }, [selectedBuildingId, buildings, obstacles]);
 
   // kWp labels on the map (DOM markers — style-independent, survive setStyle).
   // Shows down to zoom 13; at lower zooms only the highest-kWp roofs in view
@@ -701,8 +669,6 @@ export default function MapView() {
       <BottomToolbar
         mapRef={mapRef}
         is3DRef={is3DRef}
-        showPanels={showPanels}
-        onTogglePanels={() => setShowPanels((v) => !v)}
         showLabels={showLabels}
         onToggleLabels={() => setShowLabels((v) => !v)}
       />
@@ -711,12 +677,10 @@ export default function MapView() {
 }
 
 function BottomToolbar({
-  mapRef, is3DRef, showPanels, onTogglePanels, showLabels, onToggleLabels,
+  mapRef, is3DRef, showLabels, onToggleLabels,
 }: {
   mapRef: RefObject<maplibregl.Map | null>;
   is3DRef: React.MutableRefObject<boolean>;
-  showPanels: boolean;
-  onTogglePanels: () => void;
   showLabels: boolean;
   onToggleLabels: () => void;
 }) {
@@ -803,9 +767,6 @@ function BottomToolbar({
       </button>
       <button type="button" title={is3D ? "Vista 2D" : "Vista 3D"} aria-pressed={is3D ? "true" : "false"} onClick={toggle3D} className={btn(is3D)}>
         <Box size={16} />
-      </button>
-      <button type="button" title={showPanels ? "Ocultar painéis" : "Mostrar painéis"} aria-pressed={showPanels ? "true" : "false"} onClick={onTogglePanels} className={btn(showPanels)}>
-        <Grid3x3 size={16} />
       </button>
       <button type="button" title={showLabels ? "Ocultar kWp no mapa" : "Mostrar kWp no mapa"} aria-pressed={showLabels ? "true" : "false"} onClick={onToggleLabels} className={btn(showLabels)}>
         <Tag size={16} />

@@ -175,7 +175,7 @@ describe("packRoof", () => {
   it("applies the obstacle derate to the headline kWp", () => {
     const roof = rectRoof(LON, LAT, 80, 40);
     const r = packRoof(roof, { lat: LAT, mount: "flat", tiltDeg: 10, obstacleDerate: 0.85 });
-    expect(r.kwpDerated).toBeCloseTo(Math.round((r.modules * TRINA_630.wp * 0.85) / 100) / 10, 1);
+    expect(r.kwpDerated).toBeCloseTo(Math.round((r.modules * TRINA_630.wp * 0.85 * 0.7) / 100) / 10, 1);
     expect(r.kwpDerated).toBeLessThan(r.kwp);
   });
 
