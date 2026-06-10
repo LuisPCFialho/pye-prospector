@@ -508,3 +508,34 @@ export async function setCompanyCache(buildingId: string, result: unknown): Prom
     );
   } catch { /* non-critical */ }
 }
+
+// ── Roof obstacle detection SQLite cache (30-day TTL) ─────────────────────────
+
+const ROOF_OBSTACLES_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export async function getRoofObstaclesCache(buildingId: string): Promise<unknown | null> {
+  try {
+    const db = await getDB();
+    const rows = await db.select<{ payload: string; detected_at: string }[]>(
+      "SELECT payload, detected_at FROM roof_obstacles WHERE building_id = ?", [buildingId],
+    );
+    if (!rows.length) return null;
+    const age = Date.now() - new Date(rows[0].detected_at).getTime();
+    // !isFinite guards malformed detected_at (NaN never exceeds the TTL)
+    if (!Number.isFinite(age) || age > ROOF_OBSTACLES_TTL_MS) {
+      await db.execute("DELETE FROM roof_obstacles WHERE building_id = ?", [buildingId]);
+      return null;
+    }
+    return JSON.parse(rows[0].payload);
+  } catch { return null; }
+}
+
+export async function setRoofObstaclesCache(buildingId: string, obstacles: unknown): Promise<void> {
+  try {
+    const db = await getDB();
+    await db.execute(
+      "INSERT OR REPLACE INTO roof_obstacles (building_id, payload, detected_at) VALUES (?, ?, ?)",
+      [buildingId, JSON.stringify(obstacles), new Date().toISOString()],
+    );
+  } catch { /* non-critical */ }
+}

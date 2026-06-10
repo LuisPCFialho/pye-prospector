@@ -77,6 +77,7 @@ interface AppState {
   clearSelection: () => void;
 
   addObstacle: (buildingId: string, poly: GeoJSON.Polygon) => void;
+  setObstacles: (buildingId: string, polys: GeoJSON.Polygon[]) => void;
   clearObstacles: (buildingId: string) => void;
 
   setShowLocationDetails: (v: boolean) => void;
@@ -185,6 +186,12 @@ export const useAppStore = create<AppState>((set) => ({
         [buildingId]: [...(s.obstacles[buildingId] ?? []), poly],
       },
     })),
+  setObstacles: (buildingId, polys) =>
+    set((s) => {
+      // Packing depends on obstacles — invalidate so kWp is recomputed
+      clearPackingCacheStore(buildingId);
+      return { obstacles: { ...s.obstacles, [buildingId]: polys } };
+    }),
   clearObstacles: (buildingId) =>
     set((s) => {
       if (!s.obstacles[buildingId]) return {};

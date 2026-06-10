@@ -76,6 +76,12 @@ pub fn run() {
             sql: include_str!("../migrations/0006_company_cache.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "roof_obstacles",
+            sql: include_str!("../migrations/0007_roof_obstacles.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

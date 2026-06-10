@@ -4,7 +4,8 @@
  * Places REAL solar module rectangles inside a roof polygon and counts them —
  * replacing the crude `area * fraction * W/m²` guess with an actual layout.
  * Accounts for perimeter setbacks, inter-row spacing (anti-shading) on flat
- * roofs, the roof's dominant orientation, and obstacle exclusion zones.
+ * roofs, the roof's dominant orientation, obstacle exclusion zones, and
+ * maintenance corridors between panel islands (max 20 cols × 10 rows).
  *
  * Default module: Trina Vertex N TSM-NEG20C.20-630 (630 Wp, 2.172 × 1.303 m).
  */
@@ -43,6 +44,12 @@ export interface PackOptions {
   lat: number;
   /** Gap between modules within a row (metres). Default 0.02. */
   colGapM?: number;
+  /** Max columns per panel island before a maintenance corridor (default 20). */
+  maxIslandCols?: number;
+  /** Max rows per panel island before a maintenance corridor (default 10). */
+  maxIslandRows?: number;
+  /** Minimum CLEAR corridor between adjacent islands, metres (default 0.5). */
+  corridorM?: number;
   /** Exclusion polygons (HVAC/UTA, skylights, walls) in lon/lat. */
   obstacles?: GeoJSON.Polygon[];
   /** Obstacle derate when geometry unknown (0-1). Default 1 (no derate). */
@@ -163,6 +170,10 @@ export function packRoof(roof: GeoJSON.Polygon, opts: PackOptions): PackResult {
   const setbackM = opts.setbackM ?? 1.0;
   const colGap = opts.colGapM ?? 0.02;
   const derate = opts.obstacleDerate ?? 1;
+  // Clamp to >=1: 0 would make floor(i/0)=Infinity and break the grid loop
+  const maxIslandCols = Math.max(1, opts.maxIslandCols ?? 20);
+  const maxIslandRows = Math.max(1, opts.maxIslandRows ?? 10);
+  const corridorM = opts.corridorM ?? 0.5;
 
   // 1) Inset by setback, then subtract obstacles (all in lon/lat via turf)
   let work: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null = turf.feature(roof);
@@ -229,7 +240,10 @@ export function packRoof(roof: GeoJSON.Polygon, opts: PackOptions): PackResult {
     const rowGap = mount === "flat" ? rowGapMeters(v.slope, tiltDeg, opts.lat, rowBearingDeg) : 0;
     const stepY = v.depth + rowGap;
     const stepX = v.w;
-    const panels = fillGrid(work, proj, theta, stepX, stepY, v.w - colGap, v.depth);
+    const panels = fillGrid(
+      work, proj, theta, stepX, stepY, v.w - colGap, v.depth,
+      maxIslandCols, maxIslandRows, corridorM,
+    );
     const count = panels.length;
     if (!best || count > best.modules) {
       const gcr = stepY > 0 ? v.depth / stepY : 1;
@@ -267,6 +281,9 @@ function fillGrid(
   stepY: number,
   moduleW: number,
   moduleDepth: number,
+  maxIslandCols: number,
+  maxIslandRows: number,
+  corridorM: number,
 ): GeoJSON.Feature<GeoJSON.Polygon>[] {
   // Rotate the work polygon into the module frame to get an axis-aligned bbox
   const ctrM: [number, number] = [0, 0]; // projector pivot is the centroid
@@ -299,10 +316,22 @@ function fillGrid(
     return c;
   };
 
+  // Island corridors: every maxIslandRows rows / maxIslandCols columns, widen the
+  // gap so the CLEAR space between adjacent islands is at least corridorM. When the
+  // regular gap already exceeds corridorM (e.g. flat-roof anti-shading row gap) the
+  // extra is 0 — the existing gap already serves as the maintenance corridor.
+  const extraColGap = Math.max(0, corridorM - (stepX - moduleW));
+  const extraRowGap = Math.max(0, corridorM - (stepY - moduleDepth));
+
   const panels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
   const MAX_PANELS = 6000; // safety cap for huge roofs
-  for (let cy = minY + (stepY - moduleDepth) / 2; cy + moduleDepth <= maxY; cy += stepY) {
-    for (let cx = minX; cx + moduleW <= maxX; cx += stepX) {
+  const startY = minY + (stepY - moduleDepth) / 2;
+  for (let r = 0; ; r++) {
+    const cy = startY + r * stepY + Math.floor(r / maxIslandRows) * extraRowGap;
+    if (cy + moduleDepth > maxY) break;
+    for (let i = 0; ; i++) {
+      const cx = minX + i * stepX + Math.floor(i / maxIslandCols) * extraColGap;
+      if (cx + moduleW > maxX) break;
       // rectangle corners + centre in rotated frame
       const x0 = cx, x1 = cx + moduleW, y0 = cy, y1 = cy + moduleDepth;
       if (

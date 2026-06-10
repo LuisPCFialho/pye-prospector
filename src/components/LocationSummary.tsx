@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { X, ChevronRight, Building2, Globe, Phone, RefreshCw, ExternalLink, Link2, Info, Zap, MapPin, Search } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { fetchPVGIS, estimatePeakPower } from "../lib/pvgis";
-import { saveLead } from "../db/database";
+import { saveLead, getRoofObstaclesCache, setRoofObstaclesCache } from "../db/database";
 import { autoFillLeadFromOSM, getDisplayCompany, getDisplayWebsite, getDisplayPhone, hasSolarOnOSM } from "../lib/leadAutoFill";
 import { openExternal, streetViewUrl, googleVerifyUrl } from "../lib/openExternal";
 import { resolveCompany, getCachedResolve } from "../lib/companyResolver";
@@ -10,7 +10,9 @@ import { validateField } from "../lib/validation";
 import { scoreLead, scoreColor } from "../lib/leadScore";
 import { getRoofPacking } from "../lib/roofPacking";
 import { detectSolarFromMapillary } from "../lib/mapillary";
-import type { CompanyCandidate, Lead } from "../types/building";
+import { detectRoofObstacles } from "../lib/roofObstacles";
+import { geminiKey } from "../lib/gemini";
+import type { BuildingFeature, CompanyCandidate, Lead } from "../types/building";
 
 type Tab = "flag" | "solar" | "drop";
 
@@ -20,6 +22,21 @@ const SOURCE_LABEL: Record<CompanyCandidate["source"], string> = {
   gemini: "IA",
   registry: "Registo",
 };
+
+type ObstacleStatus = "idle" | "detecting" | "done" | "none";
+
+/** Narrow the unknown cache payload back to plain GeoJSON polygons. */
+function isPolygonArray(value: unknown): value is GeoJSON.Polygon[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (p) =>
+        typeof p === "object" && p !== null &&
+        (p as { type?: unknown }).type === "Polygon" &&
+        Array.isArray((p as { coordinates?: unknown }).coordinates),
+    )
+  );
+}
 
 export default function LocationSummary() {
   const selectedBuildingId  = useAppStore((s) => s.selectedBuildingId);
@@ -35,6 +52,7 @@ export default function LocationSummary() {
   const buildingObstacles   = useAppStore(
     (s) => (s.selectedBuildingId ? s.obstacles[s.selectedBuildingId] : undefined),
   );
+  const setObstacles        = useAppStore((s) => s.setObstacles);
 
   const [tab, setTab]                   = useState<Tab>("flag");
   const [calcingSolar, setCalcing]       = useState(false);
@@ -43,6 +61,8 @@ export default function LocationSummary() {
   const [candidates, setCandidates]      = useState<CompanyCandidate[]>([]);
   const [loadingLookup, setLoadingLookup] = useState(false);
   const [mapillaryPvHint, setMapillaryPvHint] = useState<"possible" | null>(null);
+  const [obsStatus, setObsStatus]         = useState<ObstacleStatus>("idle");
+  const [obsCount, setObsCount]           = useState(0);
 
   const building = buildings.find((b) => b.id === selectedBuildingId);
   const lead     = selectedBuildingId ? leads[selectedBuildingId] : undefined;
@@ -96,6 +116,63 @@ export default function LocationSummary() {
     detectSolarFromMapillary(building.centroidLat, building.centroidLon)
       .then((hint) => setMapillaryPvHint(hint))
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [building?.id]);
+
+  // Run satellite obstacle detection and publish the result (store + 30-day
+  // SQLite cache). Best-effort: failures only set local status, never notify.
+  // `isStale` guards the local UI state; the store/cache writes are keyed by
+  // building id so they stay valid even after navigating away.
+  async function runObstacleDetection(
+    target: BuildingFeature,
+    overwrite: boolean,
+    isStale: () => boolean,
+  ): Promise<void> {
+    try {
+      const detected = await detectRoofObstacles(target);
+      const polys = detected.map((o) => o.polygon);
+      if (polys.length > 0 || overwrite) setObstacles(target.id, polys);
+      // Cache the empty result too so Gemini is not re-called for 30 days
+      await setRoofObstaclesCache(target.id, polys);
+      if (isStale()) return;
+      setObsCount(polys.length);
+      setObsStatus(polys.length > 0 ? "done" : "none");
+    } catch {
+      if (!isStale()) setObsStatus("none");
+    }
+  }
+
+  // Background automatic obstacle detection — store first, then SQLite cache,
+  // then Gemini Vision over stitched satellite tiles.
+  useEffect(() => {
+    let cancelled = false;
+    setObsStatus("idle");
+    setObsCount(0);
+    if (!building) return;
+    const target = building;
+    const existing = useAppStore.getState().obstacles[target.id];
+    if (existing?.length) {
+      setObsStatus("done");
+      setObsCount(existing.length);
+      return;
+    }
+    void (async () => {
+      const cached = await getRoofObstaclesCache(target.id);
+      if (isPolygonArray(cached)) {
+        if (cached.length > 0) setObstacles(target.id, cached);
+        if (cancelled) return;
+        setObsCount(cached.length);
+        setObsStatus(cached.length > 0 ? "done" : "none");
+        return;
+      }
+      if (cancelled) return;
+      // Without a Gemini key detection always returns [] — stay idle instead
+      // of caching a false "no obstacles" negative for 30 days.
+      if (!geminiKey()) return;
+      setObsStatus("detecting");
+      await runObstacleDetection(target, false, () => cancelled);
+    })().catch(() => { if (!cancelled) setObsStatus("none"); });
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [building?.id]);
 
@@ -174,6 +251,23 @@ export default function LocationSummary() {
     } finally {
       setCalcing(false);
     }
+  }
+
+  async function handleRedetectObstacles() {
+    if (!building || obsStatus === "detecting") return;
+    if (!geminiKey()) {
+      notify("Deteção indisponível — falta a chave Gemini nas Definições", "warning");
+      return;
+    }
+    const target = building;
+    setObsStatus("detecting");
+    setObsCount(0);
+    // Bypass both caches and overwrite the store with the fresh result
+    await runObstacleDetection(
+      target,
+      true,
+      () => useAppStore.getState().selectedBuildingId !== target.id,
+    );
   }
 
   async function handleGetMetadata() {
@@ -282,6 +376,30 @@ export default function LocationSummary() {
             {packing.result.modules > 0 && (
               <div className="text-[10px] text-[#8892a4] -mt-2">
                 {packing.result.modules} módulos Trina 630W · {packing.roof.mount === "flat" ? "telhado plano" : "telhado inclinado"} · {packing.result.bearingDeg}°
+              </div>
+            )}
+
+            {/* Automatic obstacle detection (satélite + Gemini) */}
+            {obsStatus === "detecting" && (
+              <div className="text-[10px] text-[#8892a4] animate-pulse -mt-2">
+                A detetar obstáculos (satélite)…
+              </div>
+            )}
+            {(obsStatus === "done" || obsStatus === "none") && (
+              <div className="flex items-center gap-1.5 text-[10px] text-[#8892a4] -mt-2">
+                <span className="flex-1 truncate">
+                  {obsStatus === "done"
+                    ? `${obsCount} obstáculo(s) detetado(s) — subtraídos ao kWp`
+                    : "Sem obstáculos detetados"}
+                </span>
+                <button
+                  type="button"
+                  title="Re-detetar obstáculos no satélite (ignora cache)"
+                  onClick={() => void handleRedetectObstacles()}
+                  className="px-1.5 py-0.5 rounded border border-[#2a2b3d] bg-[#1e1f30] hover:border-[#f97316]/40 hover:text-white transition-colors shrink-0"
+                >
+                  Re-detetar
+                </button>
               </div>
             )}
 

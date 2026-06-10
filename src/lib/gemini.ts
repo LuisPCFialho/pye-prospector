@@ -3,10 +3,10 @@ import { createRateLimiter } from "./fetchUtils";
 
 // Throttle Gemini to ~13 req/min (under the 15 RPM free-tier limit) so bursts
 // of company lookups don't trip 429 quota errors.
-const geminiLimiter = createRateLimiter(4500);
+export const geminiLimiter = createRateLimiter(4500);
 
 /** Resolve the Gemini key: user override in localStorage wins over the build-time env. */
-function geminiKey(): string {
+export function geminiKey(): string {
   try {
     const override = localStorage.getItem("pye:geminiKey");
     if (override && override.trim()) return override.trim();
